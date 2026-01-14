@@ -20,6 +20,34 @@ interface BookData {
   word_count?: number;
 }
 
+// Fetch high-quality cover from Open Library
+async function fetchOpenLibraryCover(title: string, author: string): Promise<string | null> {
+  try {
+    // Search Open Library for the book
+    const searchQuery = encodeURIComponent(`${title} ${author}`);
+    const searchRes = await fetch(`https://openlibrary.org/search.json?q=${searchQuery}&limit=1`);
+    if (!searchRes.ok) return null;
+    
+    const searchData = await searchRes.json();
+    const firstResult = searchData.docs?.[0];
+    
+    if (firstResult?.cover_i) {
+      // Return large cover image
+      return `https://covers.openlibrary.org/b/id/${firstResult.cover_i}-L.jpg`;
+    }
+    
+    // Try ISBN-based cover if available
+    if (firstResult?.isbn?.[0]) {
+      return `https://covers.openlibrary.org/b/isbn/${firstResult.isbn[0]}-L.jpg`;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("Error fetching Open Library cover:", error);
+    return null;
+  }
+}
+
 // Fetch books from Project Gutenberg
 async function fetchGutenbergBooks(query?: string, page = 1, limit = 20): Promise<BookData[]> {
   try {
@@ -39,33 +67,45 @@ async function fetchGutenbergBooks(query?: string, page = 1, limit = 20): Promis
     
     const data = await response.json();
     
-    return (data.results || []).slice(0, limit).map((book: any) => {
-      // Get best available cover
-      const coverUrl = book.formats?.["image/jpeg"] || 
-                       Object.entries(book.formats || {}).find(([k]) => k.includes("image"))?.[1];
-      
-      // Get EPUB URL
-      const epubUrl = book.formats?.["application/epub+zip"];
+    const books: BookData[] = [];
+    
+    for (const book of (data.results || []).slice(0, limit)) {
+      // Get EPUB URL - use the direct .epub.images format which works for reading
+      const epubUrl = book.formats?.["application/epub+zip"] || null;
       
       // Get author
       const author = book.authors?.length > 0 
         ? book.authors.map((a: any) => a.name).join(", ")
         : "Unknown Author";
       
-      return {
+      const title = book.title || "Untitled";
+      
+      // Get fallback Gutenberg cover
+      const gutenbergCover = book.formats?.["image/jpeg"] || 
+                             Object.entries(book.formats || {}).find(([k]) => k.includes("image"))?.[1];
+      
+      // Try to get high-quality cover from Open Library
+      let coverUrl = await fetchOpenLibraryCover(title, author);
+      if (!coverUrl) {
+        coverUrl = gutenbergCover || null;
+      }
+      
+      books.push({
         external_id: `gutenberg-${book.id}`,
         source: "gutenberg" as const,
-        title: book.title || "Untitled",
+        title,
         author,
-        description: book.summaries?.[0] || null,
-        cover_url: coverUrl || null,
-        epub_url: epubUrl || null,
+        description: book.summaries?.[0] || undefined,
+        cover_url: coverUrl || undefined,
+        epub_url: epubUrl || undefined,
         subjects: book.subjects || [],
         language: book.languages?.[0] || "en",
-        publication_year: null,
-        word_count: null,
-      };
-    });
+        publication_year: undefined,
+        word_count: undefined,
+      });
+    }
+    
+    return books;
   } catch (error) {
     console.error("Error fetching from Gutenberg:", error);
     return [];

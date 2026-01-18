@@ -1,1 +1,7 @@
 project_id = "foccqqkpelbicbphbjsr"
+
+[functions.fetch-books]
+verify_jwt = false
+
+[functions.proxy-epub]
+verify_jwt = false

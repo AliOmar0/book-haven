@@ -150,7 +150,11 @@ export default function Reader() {
           epubRef.current.destroy();
         }
 
-        const epub = ePub(book.epub_url!);
+        // Proxy the EPUB URL through our edge function to bypass CORS
+        const proxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/proxy-epub?url=${encodeURIComponent(book.epub_url!)}`;
+        console.log('Loading EPUB from proxy:', proxyUrl);
+        
+        const epub = ePub(proxyUrl);
         epubRef.current = epub;
 
         const rendition = epub.renderTo(viewerRef.current!, {

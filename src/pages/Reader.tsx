@@ -82,6 +82,8 @@ export default function Reader() {
   const [progress, setProgress] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [currentPage, setCurrentPage] = useState(0);
+  const [epubReady, setEpubReady] = useState(false);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
   // UI state
   const [settings, setSettings] = useState<ReaderSettings>(defaultSettings);
@@ -139,47 +141,96 @@ export default function Reader() {
     loadBook();
   }, [id, user, navigate, toast]);
 
+  // Track container size
+  useEffect(() => {
+    if (!viewerRef.current) return;
+
+    const updateSize = () => {
+      if (viewerRef.current) {
+        const rect = viewerRef.current.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          setContainerSize({ width: rect.width, height: rect.height });
+        }
+      }
+    };
+
+    // Initial size
+    updateSize();
+
+    // Observe resize
+    const resizeObserver = new ResizeObserver(updateSize);
+    resizeObserver.observe(viewerRef.current);
+
+    return () => resizeObserver.disconnect();
+  }, [loading]);
+
   // Initialize EPUB reader
   useEffect(() => {
-    if (!book?.epub_url || !viewerRef.current) return;
+    if (!book?.epub_url || !viewerRef.current || containerSize.width === 0 || containerSize.height === 0) {
+      return;
+    }
+
+    let mounted = true;
 
     const initEpub = async () => {
       try {
         // Clean up existing instance
         if (epubRef.current) {
           epubRef.current.destroy();
+          epubRef.current = null;
+          setEpubReady(false);
         }
 
         // Proxy the EPUB URL through our edge function to bypass CORS
         const proxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/proxy-epub?url=${encodeURIComponent(book.epub_url!)}`;
-        console.log('Loading EPUB from proxy:', proxyUrl);
         
-        // Fetch the EPUB as ArrayBuffer to ensure proper loading
-        const response = await fetch(proxyUrl);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch EPUB: ${response.status}`);
-        }
-        const epubData = await response.arrayBuffer();
-        console.log('EPUB data loaded, size:', epubData.byteLength);
-        
-        const epub = ePub(epubData);
+        // Initialize epub directly with proxy URL
+        const epub = ePub(proxyUrl);
         epubRef.current = epub;
 
-        const rendition = epub.renderTo(viewerRef.current!, {
-          width: '100%',
-          height: '100%',
+        if (!mounted || !viewerRef.current) return;
+
+        // Render to container
+        const rendition = epub.renderTo(viewerRef.current, {
+          width: containerSize.width,
+          height: containerSize.height,
           spread: 'none',
-          flow: 'paginated',
         });
 
         renditionRef.current = rendition;
 
-        // Apply initial settings
+        // Display first page immediately
+        await rendition.display();
+        
+        if (!mounted) return;
+        
+        setEpubReady(true);
+
+        // Apply initial settings after display
         applySettings(settings);
 
-        // Load the book
-        await epub.ready;
-        console.log('EPUB ready');
+        // Load TOC and locations in background
+        epub.loaded.navigation.then(nav => {
+          if (mounted) setToc(nav.toc);
+        });
+        
+        epub.locations.generate(1024).then(() => {
+          if (mounted) setTotalPages(epub.locations.length());
+        });
+
+        // Location change handler
+        rendition.on('locationChanged', (location: any) => {
+          if (!mounted) return;
+          const locationCfi = location.start?.cfi || '';
+          setCurrentLocation(locationCfi);
+          
+          if (epub.locations.length() > 0) {
+            const progressPercent = epub.locations.percentageFromCfi(locationCfi) * 100;
+            setProgress(progressPercent);
+            const locationNum = epub.locations.locationFromCfi(locationCfi);
+            setCurrentPage(typeof locationNum === 'number' ? locationNum : 0);
+          }
+        });
         
         // Get TOC
         const navigation = await epub.loaded.navigation;
@@ -192,6 +243,8 @@ export default function Reader() {
         // Display from saved location or start
         const startLocation = libraryItem?.current_location || undefined;
         await rendition.display(startLocation);
+        setEpubReady(true);
+        console.log('EPUB displayed successfully');
 
         // Location change handler
         rendition.on('locationChanged', (location: any) => {
@@ -243,11 +296,13 @@ export default function Reader() {
     initEpub();
 
     return () => {
+      mounted = false;
       if (epubRef.current) {
         epubRef.current.destroy();
+        epubRef.current = null;
       }
     };
-  }, [book?.epub_url]);
+  }, [book?.epub_url, containerSize.width, containerSize.height]);
 
   // Apply settings to rendition
   const applySettings = useCallback((s: ReaderSettings) => {
@@ -706,12 +761,23 @@ export default function Reader() {
           <ChevronRight className="h-6 w-6" />
         </Button>
 
-        {/* EPUB Viewer */}
+        {/* Loading indicator while EPUB loads */}
+        {!epubReady && book?.epub_url && (
+          <div className="absolute inset-0 flex items-center justify-center bg-background/80 z-20">
+            <div className="flex flex-col items-center gap-2">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">Loading book...</p>
+            </div>
+          </div>
+        )}
+
+        {/* EPUB Viewer - separate container for epubjs */}
         <div
           ref={viewerRef}
-          className="h-full w-full px-4 md:px-16 cursor-pointer"
+          className="h-full w-full"
           onClick={(e) => {
-            const rect = (e.target as HTMLElement).getBoundingClientRect();
+            const rect = viewerRef.current?.getBoundingClientRect();
+            if (!rect) return;
             const clickX = e.clientX - rect.left;
             if (clickX < rect.width / 3) {
               goPrev();

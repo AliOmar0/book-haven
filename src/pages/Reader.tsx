@@ -154,13 +154,22 @@ export default function Reader() {
         const proxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/proxy-epub?url=${encodeURIComponent(book.epub_url!)}`;
         console.log('Loading EPUB from proxy:', proxyUrl);
         
-        const epub = ePub(proxyUrl);
+        // Fetch the EPUB as ArrayBuffer to ensure proper loading
+        const response = await fetch(proxyUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch EPUB: ${response.status}`);
+        }
+        const epubData = await response.arrayBuffer();
+        console.log('EPUB data loaded, size:', epubData.byteLength);
+        
+        const epub = ePub(epubData);
         epubRef.current = epub;
 
         const rendition = epub.renderTo(viewerRef.current!, {
           width: '100%',
           height: '100%',
           spread: 'none',
+          flow: 'paginated',
         });
 
         renditionRef.current = rendition;
@@ -170,6 +179,7 @@ export default function Reader() {
 
         // Load the book
         await epub.ready;
+        console.log('EPUB ready');
         
         // Get TOC
         const navigation = await epub.loaded.navigation;

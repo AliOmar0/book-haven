@@ -20,10 +20,75 @@ interface BookData {
   word_count?: number;
 }
 
-// Fetch high-quality cover from Open Library
+// Fetch high-quality cover from Goodreads using Firecrawl
+async function fetchGoodreadsCover(title: string, author: string): Promise<string | null> {
+  const firecrawlApiKey = Deno.env.get("FIRECRAWL_API_KEY");
+  if (!firecrawlApiKey) {
+    console.log("FIRECRAWL_API_KEY not configured, skipping Goodreads cover fetch");
+    return null;
+  }
+
+  try {
+    // Search Goodreads for the book
+    const searchQuery = encodeURIComponent(`${title} ${author}`);
+    const goodreadsSearchUrl = `https://www.goodreads.com/search?q=${searchQuery}`;
+    
+    console.log("Searching Goodreads for:", title, "by", author);
+    
+    const response = await fetch("https://api.firecrawl.dev/v1/scrape", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${firecrawlApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        url: goodreadsSearchUrl,
+        formats: ["html"],
+        onlyMainContent: false,
+        waitFor: 2000,
+      }),
+    });
+
+    if (!response.ok) {
+      console.error("Firecrawl API error:", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    const html = data.data?.html || data.html || "";
+    
+    // Extract the first book cover image URL from search results
+    // Goodreads uses images like https://images-na.ssl-images-amazon.com/images/S/... or https://i.gr-assets.com/images/S/...
+    const coverPatterns = [
+      /https:\/\/i\.gr-assets\.com\/images\/S\/compressed\.photo\.goodreads\.com\/books\/[^"'\s]+/g,
+      /https:\/\/images-na\.ssl-images-amazon\.com\/images\/S\/compressed\.photo\.goodreads\.com\/books\/[^"'\s]+/g,
+      /https:\/\/images\.gr-assets\.com\/books\/[^"'\s]+/g,
+    ];
+    
+    for (const pattern of coverPatterns) {
+      const matches = html.match(pattern);
+      if (matches && matches.length > 0) {
+        // Get a larger image by replacing size indicators
+        let coverUrl = matches[0];
+        // Remove size suffix to get full size
+        coverUrl = coverUrl.replace(/\._S[XY]\d+_/, '');
+        coverUrl = coverUrl.replace(/\._U[XY]\d+_/, '');
+        console.log("Found Goodreads cover:", coverUrl);
+        return coverUrl;
+      }
+    }
+    
+    console.log("No cover found in Goodreads search results");
+    return null;
+  } catch (error) {
+    console.error("Error fetching Goodreads cover:", error);
+    return null;
+  }
+}
+
+// Fetch high-quality cover from Open Library (fallback)
 async function fetchOpenLibraryCover(title: string, author: string): Promise<string | null> {
   try {
-    // Search Open Library for the book
     const searchQuery = encodeURIComponent(`${title} ${author}`);
     const searchRes = await fetch(`https://openlibrary.org/search.json?q=${searchQuery}&limit=1`);
     if (!searchRes.ok) return null;
@@ -32,11 +97,9 @@ async function fetchOpenLibraryCover(title: string, author: string): Promise<str
     const firstResult = searchData.docs?.[0];
     
     if (firstResult?.cover_i) {
-      // Return large cover image
       return `https://covers.openlibrary.org/b/id/${firstResult.cover_i}-L.jpg`;
     }
     
-    // Try ISBN-based cover if available
     if (firstResult?.isbn?.[0]) {
       return `https://covers.openlibrary.org/b/isbn/${firstResult.isbn[0]}-L.jpg`;
     }
@@ -84,8 +147,11 @@ async function fetchGutenbergBooks(query?: string, page = 1, limit = 20): Promis
       const gutenbergCover = book.formats?.["image/jpeg"] || 
                              Object.entries(book.formats || {}).find(([k]) => k.includes("image"))?.[1];
       
-      // Try to get high-quality cover from Open Library
-      let coverUrl = await fetchOpenLibraryCover(title, author);
+      // Try to get high-quality cover from Goodreads first, then Open Library
+      let coverUrl = await fetchGoodreadsCover(title, author);
+      if (!coverUrl) {
+        coverUrl = await fetchOpenLibraryCover(title, author);
+      }
       if (!coverUrl) {
         coverUrl = gutenbergCover || null;
       }

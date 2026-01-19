@@ -3,7 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { 
   ArrowLeft, BookOpen, Menu, X, ChevronLeft, ChevronRight, 
   Bookmark, BookmarkCheck, Highlighter, StickyNote, Settings, 
-  List, Search, Sun, Moon, Palette, Minus, Plus, Type
+  List, Search, Sun, Moon, Palette, Minus, Plus, Type, Tag
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -27,6 +27,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -84,9 +85,15 @@ export default function Reader() {
   const [currentPage, setCurrentPage] = useState(0);
   const [epubReady, setEpubReady] = useState(false);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const [locationsReady, setLocationsReady] = useState(false);
+
+  // Page flip animation state
+  const [isFlipping, setIsFlipping] = useState(false);
+  const [flipDirection, setFlipDirection] = useState<'left' | 'right'>('right');
 
   // UI state
   const [settings, setSettings] = useState<ReaderSettings>(defaultSettings);
+  const settingsRef = useRef<ReaderSettings>(defaultSettings);
   const [showSidebar, setShowSidebar] = useState(false);
   const [bookmarks, setBookmarks] = useState<BookmarkType[]>([]);
   const [highlights, setHighlights] = useState<Highlight[]>([]);
@@ -95,6 +102,11 @@ export default function Reader() {
   const [selectedColor, setSelectedColor] = useState(highlightColors[0]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
+
+  // Keep settings ref in sync without triggering EPUB re-init
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
 
   // Load book data
   useEffect(() => {
@@ -164,7 +176,7 @@ export default function Reader() {
     return () => resizeObserver.disconnect();
   }, [loading]);
 
-  // Initialize EPUB reader
+  // Initialize EPUB reader - only depends on book URL and container, NOT settings
   useEffect(() => {
     if (!book?.epub_url || !viewerRef.current || containerSize.width === 0 || containerSize.height === 0) {
       return;
@@ -180,9 +192,9 @@ export default function Reader() {
           epubRef.current = null;
         }
         setEpubReady(false);
+        setLocationsReady(false);
 
         // Proxy the EPUB URL through our backend function to bypass CORS
-        // NOTE: proxy URL does not end with .epub, so we force epubjs to treat it as an EPUB.
         const proxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/proxy-epub?url=${encodeURIComponent(
           book.epub_url!
         )}`;
@@ -240,7 +252,8 @@ export default function Reader() {
         if (!mounted) return;
 
         setEpubReady(true);
-        applySettings(settings);
+        // Apply current settings from ref (not state to avoid re-init)
+        applySettings(settingsRef.current);
 
         // Load TOC + locations in background (used for page count / progress)
         epub.loaded.navigation
@@ -252,7 +265,10 @@ export default function Reader() {
         epub.locations
           .generate(1024)
           .then(() => {
-            if (mounted) setTotalPages(epub.locations.length());
+            if (mounted) {
+              setTotalPages(epub.locations.length());
+              setLocationsReady(true);
+            }
           })
           .catch(console.error);
 
@@ -282,18 +298,9 @@ export default function Reader() {
         epubRef.current = null;
       }
     };
-  }, [
-    book?.epub_url,
-    containerSize.width,
-    containerSize.height,
-    libraryItem?.current_location,
-    highlights,
-    user?.id,
-    settings,
-    toast,
-  ]);
+  }, [book?.epub_url, containerSize.width, containerSize.height, libraryItem?.current_location, highlights, user?.id, toast]);
 
-  // Apply settings to rendition
+  // Apply settings to rendition WITHOUT re-initializing EPUB
   const applySettings = useCallback((s: ReaderSettings) => {
     if (!renditionRef.current) return;
 
@@ -314,24 +321,55 @@ export default function Reader() {
     });
   }, []);
 
-  // Update settings
+  // Update settings without re-init - just apply styles
   useEffect(() => {
-    applySettings(settings);
-  }, [settings, applySettings]);
+    if (epubReady) {
+      applySettings(settings);
+    }
+  }, [settings, applySettings, epubReady]);
 
-  // Navigation
+  // Navigation with page flip animation
   const goNext = useCallback(() => {
-    renditionRef.current?.next();
-  }, []);
+    if (isFlipping) return;
+    setFlipDirection('right');
+    setIsFlipping(true);
+    
+    setTimeout(() => {
+      renditionRef.current?.next();
+    }, 150);
+    
+    setTimeout(() => {
+      setIsFlipping(false);
+    }, 500);
+  }, [isFlipping]);
 
   const goPrev = useCallback(() => {
-    renditionRef.current?.prev();
-  }, []);
+    if (isFlipping) return;
+    setFlipDirection('left');
+    setIsFlipping(true);
+    
+    setTimeout(() => {
+      renditionRef.current?.prev();
+    }, 150);
+    
+    setTimeout(() => {
+      setIsFlipping(false);
+    }, 500);
+  }, [isFlipping]);
 
   const goToLocation = useCallback((cfi: string) => {
     renditionRef.current?.display(cfi);
     setShowSidebar(false);
   }, []);
+
+  const goToPercentage = useCallback((percentage: number) => {
+    if (!epubRef.current || !locationsReady) return;
+    
+    const cfi = epubRef.current.locations.cfiFromPercentage(percentage / 100);
+    if (cfi) {
+      renditionRef.current?.display(cfi);
+    }
+  }, [locationsReady]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -468,6 +506,111 @@ export default function Reader() {
 
   return (
     <div className={`fixed inset-0 flex flex-col ${themeClass}`}>
+      {/* Page flip animation overlay */}
+      <style>{`
+        @keyframes pageFlipRight {
+          0% {
+            transform: perspective(1200px) rotateY(0deg);
+            transform-origin: left center;
+          }
+          100% {
+            transform: perspective(1200px) rotateY(-180deg);
+            transform-origin: left center;
+          }
+        }
+        
+        @keyframes pageFlipLeft {
+          0% {
+            transform: perspective(1200px) rotateY(0deg);
+            transform-origin: right center;
+          }
+          100% {
+            transform: perspective(1200px) rotateY(180deg);
+            transform-origin: right center;
+          }
+        }
+        
+        @keyframes pageFlipInRight {
+          0% {
+            opacity: 0;
+            transform: translateX(20px);
+          }
+          100% {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+        
+        @keyframes pageFlipInLeft {
+          0% {
+            opacity: 0;
+            transform: translateX(-20px);
+          }
+          100% {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+        
+        .page-flip-container {
+          position: relative;
+          overflow: hidden;
+        }
+        
+        .page-flip-container.flipping-right::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(to left, rgba(0,0,0,0.15), transparent 50%);
+          animation: pageFlipRight 0.5s ease-in-out;
+          pointer-events: none;
+          z-index: 30;
+        }
+        
+        .page-flip-container.flipping-left::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(to right, rgba(0,0,0,0.15), transparent 50%);
+          animation: pageFlipLeft 0.5s ease-in-out;
+          pointer-events: none;
+          z-index: 30;
+        }
+        
+        .page-flip-container.flipping-right > div:first-child {
+          animation: pageFlipInRight 0.3s ease-out 0.2s both;
+        }
+        
+        .page-flip-container.flipping-left > div:first-child {
+          animation: pageFlipInLeft 0.3s ease-out 0.2s both;
+        }
+        
+        .page-curl {
+          position: absolute;
+          bottom: 0;
+          width: 100px;
+          height: 100px;
+          pointer-events: none;
+          z-index: 25;
+          opacity: 0;
+          transition: opacity 0.2s;
+        }
+        
+        .page-curl-right {
+          right: 0;
+          background: linear-gradient(135deg, transparent 50%, rgba(0,0,0,0.1) 50%);
+        }
+        
+        .page-curl-left {
+          left: 0;
+          background: linear-gradient(-135deg, transparent 50%, rgba(0,0,0,0.1) 50%);
+        }
+        
+        .page-flip-container:hover .page-curl {
+          opacity: 1;
+        }
+      `}</style>
+
       {/* Top Bar */}
       <header className="flex items-center justify-between px-4 py-2 border-b border-border/30 bg-inherit">
         <div className="flex items-center gap-2">
@@ -483,6 +626,29 @@ export default function Reader() {
         </div>
 
         <div className="flex items-center gap-1">
+          {/* Book Tags */}
+          {book.subjects && book.subjects.length > 0 && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon">
+                  <Tag className="h-5 w-5" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64" align="end">
+                <div className="space-y-2">
+                  <h4 className="font-semibold text-sm">Book Tags</h4>
+                  <div className="flex flex-wrap gap-1">
+                    {book.subjects.slice(0, 10).map((subject, i) => (
+                      <Badge key={i} variant="secondary" className="text-xs">
+                        {subject}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+
           {/* Bookmark */}
           {user && (
             <Button variant="ghost" size="icon" onClick={toggleBookmark}>
@@ -504,6 +670,7 @@ export default function Reader() {
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Search in Book</DialogTitle>
+                <DialogDescription>Search for text within this book</DialogDescription>
               </DialogHeader>
               <div className="space-y-4">
                 <div className="flex gap-2">
@@ -731,13 +898,14 @@ export default function Reader() {
       </header>
 
       {/* Reader Content */}
-      <div className="flex-1 relative overflow-hidden">
+      <div className={`flex-1 relative overflow-hidden page-flip-container ${isFlipping ? (flipDirection === 'right' ? 'flipping-right' : 'flipping-left') : ''}`}>
         {/* Navigation buttons */}
         <Button
           variant="ghost"
           size="icon"
           className="absolute left-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex"
           onClick={goPrev}
+          disabled={isFlipping}
         >
           <ChevronLeft className="h-6 w-6" />
         </Button>
@@ -746,9 +914,14 @@ export default function Reader() {
           size="icon"
           className="absolute right-2 top-1/2 -translate-y-1/2 z-10 hidden md:flex"
           onClick={goNext}
+          disabled={isFlipping}
         >
           <ChevronRight className="h-6 w-6" />
         </Button>
+
+        {/* Page curl indicators */}
+        <div className="page-curl page-curl-left" />
+        <div className="page-curl page-curl-right" />
 
         {/* Loading indicator while EPUB loads */}
         {!epubReady && book?.epub_url && (
@@ -765,6 +938,7 @@ export default function Reader() {
           ref={viewerRef}
           className="h-full w-full"
           onClick={(e) => {
+            if (isFlipping) return;
             const rect = viewerRef.current?.getBoundingClientRect();
             if (!rect) return;
             const clickX = e.clientX - rect.left;
@@ -820,21 +994,24 @@ export default function Reader() {
       {/* Bottom Bar */}
       <footer className="px-4 py-2 border-t border-border/30 bg-inherit">
         <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <span>Page {currentPage} of {totalPages}</span>
+          <span className="min-w-[80px]">
+            {locationsReady ? `Page ${currentPage} of ${totalPages}` : 'Loading...'}
+          </span>
           <div className="flex-1 mx-4">
             <Slider
               value={[progress]}
               max={100}
               step={0.1}
+              disabled={!locationsReady}
               onValueChange={([v]) => {
-                if (epubRef.current) {
-                  const cfi = epubRef.current.locations.cfiFromPercentage(v / 100);
-                  if (cfi) goToLocation(cfi);
-                }
+                setProgress(v);
+              }}
+              onValueCommit={([v]) => {
+                goToPercentage(v);
               }}
             />
           </div>
-          <span>{Math.round(progress)}%</span>
+          <span className="min-w-[40px] text-right">{Math.round(progress)}%</span>
         </div>
       </footer>
     </div>

@@ -178,86 +178,44 @@ export default function Reader() {
         if (epubRef.current) {
           epubRef.current.destroy();
           epubRef.current = null;
-          setEpubReady(false);
         }
+        setEpubReady(false);
 
-        // Proxy the EPUB URL through our edge function to bypass CORS
-        const proxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/proxy-epub?url=${encodeURIComponent(book.epub_url!)}`;
-        
-        // Initialize epub directly with proxy URL
-        const epub = ePub(proxyUrl);
+        // Proxy the EPUB URL through our backend function to bypass CORS
+        // NOTE: proxy URL does not end with .epub, so we force epubjs to treat it as an EPUB.
+        const proxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/proxy-epub?url=${encodeURIComponent(
+          book.epub_url!
+        )}`;
+
+        const epub = ePub(proxyUrl, { openAs: 'epub' });
         epubRef.current = epub;
+
+        // Wait until the book is ready before rendering
+        await epub.ready;
 
         if (!mounted || !viewerRef.current) return;
 
-        // Render to container
         const rendition = epub.renderTo(viewerRef.current, {
           width: containerSize.width,
           height: containerSize.height,
           spread: 'none',
         });
-
         renditionRef.current = rendition;
 
-        // Display first page immediately
-        await rendition.display();
-        
-        if (!mounted) return;
-        
-        setEpubReady(true);
-
-        // Apply initial settings after display
-        applySettings(settings);
-
-        // Load TOC and locations in background
-        epub.loaded.navigation.then(nav => {
-          if (mounted) setToc(nav.toc);
-        });
-        
-        epub.locations.generate(1024).then(() => {
-          if (mounted) setTotalPages(epub.locations.length());
-        });
-
-        // Location change handler
+        // Location change handler (progress + persistence)
         rendition.on('locationChanged', (location: any) => {
           if (!mounted) return;
-          const locationCfi = location.start?.cfi || '';
+          const locationCfi = location?.start?.cfi || '';
           setCurrentLocation(locationCfi);
-          
-          if (epub.locations.length() > 0) {
+
+          // Only compute progress once locations exist
+          if (epub.locations.length() > 0 && locationCfi) {
             const progressPercent = epub.locations.percentageFromCfi(locationCfi) * 100;
             setProgress(progressPercent);
+
             const locationNum = epub.locations.locationFromCfi(locationCfi);
             setCurrentPage(typeof locationNum === 'number' ? locationNum : 0);
-          }
-        });
-        
-        // Get TOC
-        const navigation = await epub.loaded.navigation;
-        setToc(navigation.toc);
 
-        // Generate locations for progress tracking
-        await epub.locations.generate(1024);
-        setTotalPages(epub.locations.length());
-
-        // Display from saved location or start
-        const startLocation = libraryItem?.current_location || undefined;
-        await rendition.display(startLocation);
-        setEpubReady(true);
-        console.log('EPUB displayed successfully');
-
-        // Location change handler
-        rendition.on('locationChanged', (location: any) => {
-          const locationCfi = location.start?.cfi || '';
-          setCurrentLocation(locationCfi);
-          
-          if (epub.locations.length() > 0) {
-            const progressPercent = epub.locations.percentageFromCfi(locationCfi) * 100;
-            setProgress(progressPercent);
-            const locationNum = epub.locations.locationFromCfi(locationCfi);
-            setCurrentPage(typeof locationNum === 'number' ? locationNum : 0);
-            
-            // Save progress
             if (user && libraryItem) {
               libraryApi.updateProgress(libraryItem.id, progressPercent, locationCfi).catch(console.error);
             }
@@ -275,6 +233,29 @@ export default function Reader() {
           }
         });
 
+        // Display from saved location or start
+        const startLocation = libraryItem?.current_location || undefined;
+        await rendition.display(startLocation);
+
+        if (!mounted) return;
+
+        setEpubReady(true);
+        applySettings(settings);
+
+        // Load TOC + locations in background (used for page count / progress)
+        epub.loaded.navigation
+          .then((nav) => {
+            if (mounted) setToc(nav.toc);
+          })
+          .catch(console.error);
+
+        epub.locations
+          .generate(1024)
+          .then(() => {
+            if (mounted) setTotalPages(epub.locations.length());
+          })
+          .catch(console.error);
+
         // Apply existing highlights
         highlights.forEach((h) => {
           rendition.annotations.highlight(h.cfi_range, {}, () => {}, 'highlight', {
@@ -282,7 +263,6 @@ export default function Reader() {
             'fill-opacity': '0.3',
           });
         });
-
       } catch (error) {
         console.error('Error initializing EPUB:', error);
         toast({
@@ -302,7 +282,16 @@ export default function Reader() {
         epubRef.current = null;
       }
     };
-  }, [book?.epub_url, containerSize.width, containerSize.height]);
+  }, [
+    book?.epub_url,
+    containerSize.width,
+    containerSize.height,
+    libraryItem?.current_location,
+    highlights,
+    user?.id,
+    settings,
+    toast,
+  ]);
 
   // Apply settings to rendition
   const applySettings = useCallback((s: ReaderSettings) => {

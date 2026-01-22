@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Star, Clock, Calendar, Globe, Library, Play, Check, Heart, ExternalLink } from 'lucide-react';
+import { ArrowLeft, BookOpen, Star, Clock, Calendar, Globe, Library, Play, Check, Heart, ExternalLink, Loader2 } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -11,7 +11,7 @@ import { booksApi, libraryApi, ratingsApi } from '@/lib/api/books';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import type { Book, UserLibraryItem, UserRating } from '@/types/book';
-import { Loader2 } from 'lucide-react';
+import { GoodreadsRatings } from '@/components/books/GoodreadsRatings';
 
 // Star rating component
 function StarRating({ rating, onRate, readonly = false, size = 'md' }: {
@@ -371,8 +371,13 @@ export default function BookDetail() {
                     </Badge>
                   ))}
                 </div>
-              </div>
+            </div>
             )}
+
+            <Separator />
+
+            {/* Goodreads Ratings & Reviews */}
+            <GoodreadsRatings title={book.title} author={book.author} />
 
             <Separator />
 

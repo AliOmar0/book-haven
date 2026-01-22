@@ -44,42 +44,43 @@ serve(async (req) => {
       );
     }
 
-    // Search Goodreads for the book
-    const searchQuery = encodeURIComponent(`${title} ${author || ""}`);
-    const goodreadsSearchUrl = `https://www.goodreads.com/search?q=${searchQuery}`;
+    // Use Firecrawl's search API to find the book on Goodreads
+    const searchQuery = `${title} ${author || ""} site:goodreads.com/book/show`;
+    
+    console.log("Searching for Goodreads book:", searchQuery);
 
-    console.log("Searching Goodreads for:", title, "by", author);
-
-    // First, search for the book
-    const searchResponse = await fetch("https://api.firecrawl.dev/v1/scrape", {
+    const searchResponse = await fetch("https://api.firecrawl.dev/v1/search", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${firecrawlApiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        url: goodreadsSearchUrl,
-        formats: ["html"],
-        onlyMainContent: false,
-        waitFor: 3000,
+        query: searchQuery,
+        limit: 1,
       }),
     });
 
     if (!searchResponse.ok) {
-      console.error("Firecrawl search API error:", searchResponse.status);
+      const errorText = await searchResponse.text();
+      console.error("Firecrawl search API error:", searchResponse.status, errorText);
       return new Response(
-        JSON.stringify({ success: false, error: "Failed to search Goodreads" }),
+        JSON.stringify({ success: false, error: "Failed to search for book" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const searchData = await searchResponse.json();
-    const searchHtml = searchData.data?.html || searchData.html || "";
+    console.log("Search results:", JSON.stringify(searchData).substring(0, 500));
 
-    // Extract the first book URL from search results
-    const bookUrlMatch = searchHtml.match(/href="(\/book\/show\/[^"]+)"/);
-    if (!bookUrlMatch) {
-      console.log("No book found in Goodreads search");
+    // Get the first Goodreads book URL
+    const results = searchData.data || [];
+    const goodreadsResult = results.find((r: any) => 
+      r.url && r.url.includes("goodreads.com/book/show")
+    );
+
+    if (!goodreadsResult) {
+      console.log("No Goodreads book found in search results");
       return new Response(
         JSON.stringify({
           success: true,
@@ -95,8 +96,7 @@ serve(async (req) => {
       );
     }
 
-    const bookPath = bookUrlMatch[1];
-    const bookUrl = `https://www.goodreads.com${bookPath}`;
+    const bookUrl = goodreadsResult.url;
     console.log("Found book URL:", bookUrl);
 
     // Now scrape the book page for ratings and reviews
@@ -129,6 +129,8 @@ serve(async (req) => {
     const bookHtml = bookData.data?.html || bookData.html || "";
     const bookMarkdown = bookData.data?.markdown || bookData.markdown || "";
 
+    console.log("Scraped book page, HTML length:", bookHtml.length, "Markdown length:", bookMarkdown.length);
+
     // Extract rating (Goodreads uses various patterns)
     let rating: number | null = null;
     let ratingsCount: number | null = null;
@@ -141,14 +143,18 @@ serve(async (req) => {
       /itemprop="ratingValue"[^>]*content="(\d+(?:\.\d+)?)"/i,
       /"ratingValue"\s*:\s*"?(\d+(?:\.\d+)?)"?/i,
       /(\d+\.\d{2})\s*<\/div>\s*<\/div>\s*<p[^>]*>[\d,]+\s*ratings/i,
+      /Rating\s*(\d+(?:\.\d+)?)\s*out of 5/i,
     ];
 
     for (const pattern of ratingPatterns) {
-      const match = bookHtml.match(pattern);
+      const match = bookHtml.match(pattern) || bookMarkdown.match(pattern);
       if (match) {
-        rating = parseFloat(match[1]);
-        console.log("Found rating:", rating);
-        break;
+        const parsed = parseFloat(match[1]);
+        if (parsed > 0 && parsed <= 5) {
+          rating = parsed;
+          console.log("Found rating:", rating);
+          break;
+        }
       }
     }
 
@@ -160,7 +166,7 @@ serve(async (req) => {
     ];
 
     for (const pattern of ratingsCountPatterns) {
-      const match = bookHtml.match(pattern);
+      const match = bookHtml.match(pattern) || bookMarkdown.match(pattern);
       if (match) {
         ratingsCount = parseInt(match[1].replace(/,/g, ""), 10);
         console.log("Found ratings count:", ratingsCount);
@@ -175,7 +181,7 @@ serve(async (req) => {
     ];
 
     for (const pattern of reviewsCountPatterns) {
-      const match = bookHtml.match(pattern);
+      const match = bookHtml.match(pattern) || bookMarkdown.match(pattern);
       if (match) {
         reviewsCount = parseInt(match[1].replace(/,/g, ""), 10);
         console.log("Found reviews count:", reviewsCount);
@@ -183,75 +189,54 @@ serve(async (req) => {
       }
     }
 
-    // Extract reviews - look for review content
+    // Extract reviews from markdown (more reliable than HTML parsing)
     const reviews: GoodreadsReview[] = [];
 
-    // Try to find review sections in HTML
-    // Goodreads review structure varies, but typically includes reviewer name, rating, and text
-    const reviewBlockRegex = /<section[^>]*class="[^"]*ReviewCard[^"]*"[^>]*>([\s\S]*?)<\/section>/gi;
+    // Look for review patterns - reviews on Goodreads often have star ratings followed by dates and text
+    // Pattern: Look for review content blocks with ratings
+    const reviewPattern = /(\d)\s*stars?\s*\n[\s\S]*?(\d{4})\n+(.{100,800}?)(?=\n\n\d\s*stars?|\n\n\*\s*\*\s*\*|$)/gi;
     let reviewMatch;
-    let reviewCount = 0;
-
-    while ((reviewMatch = reviewBlockRegex.exec(bookHtml)) !== null && reviewCount < 10) {
-      const reviewBlock = reviewMatch[1];
+    
+    while ((reviewMatch = reviewPattern.exec(bookMarkdown)) !== null && reviews.length < 5) {
+      const reviewRating = parseInt(reviewMatch[1], 10);
+      const reviewText = reviewMatch[3]
+        .replace(/\*\*/g, "")
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+        .replace(/!\[.*?\]\(.*?\)/g, "")
+        .replace(/\n{2,}/g, "\n")
+        .replace(/likes\s*\d+\s*comments?/gi, "")
+        .replace(/Profile Image for.*$/gi, "")
+        .trim();
       
-      // Extract reviewer name
-      const nameMatch = reviewBlock.match(/class="[^"]*ReviewerProfile__name[^"]*"[^>]*>([^<]+)</i) ||
-                        reviewBlock.match(/aria-label="[^"]*by\s+([^"]+)"/i) ||
-                        reviewBlock.match(/<a[^>]*href="\/user\/show\/[^"]*"[^>]*>([^<]+)</i);
-      
-      // Extract review text
-      const textMatch = reviewBlock.match(/class="[^"]*ReviewText[^"]*"[^>]*>[\s\S]*?<span[^>]*>([^<]+(?:<br[^>]*>[^<]*)*)/i) ||
-                        reviewBlock.match(/class="[^"]*TruncatedContent[^"]*"[^>]*>[\s\S]*?<span[^>]*>([^<]+)/i);
-      
-      // Extract review rating
-      const reviewRatingMatch = reviewBlock.match(/aria-label="Rating (\d) out of 5"/i) ||
-                                 reviewBlock.match(/class="[^"]*RatingStar[^"]*"[^>]*aria-label="(\d)/i);
-      
-      // Extract date
-      const dateMatch = reviewBlock.match(/(\w+\s+\d{1,2},?\s+\d{4})/i) ||
-                        reviewBlock.match(/<time[^>]*datetime="([^"]+)"/i);
-
-      if (textMatch) {
-        let reviewText = textMatch[1]
-          .replace(/<br\s*\/?>/gi, "\n")
-          .replace(/<[^>]+>/g, "")
-          .trim();
-        
-        // Clean up text
-        reviewText = reviewText.replace(/\s+/g, " ").substring(0, 1000);
-
-        if (reviewText.length > 20) {
-          reviews.push({
-            rating: reviewRatingMatch ? parseInt(reviewRatingMatch[1], 10) : 0,
-            text: reviewText,
-            author: nameMatch ? nameMatch[1].trim() : "Anonymous",
-            date: dateMatch ? dateMatch[1] : "",
-          });
-          reviewCount++;
-        }
+      if (reviewText.length > 80 && reviewRating >= 1 && reviewRating <= 5) {
+        reviews.push({
+          rating: reviewRating,
+          text: reviewText.substring(0, 600),
+          author: "Goodreads Reader",
+          date: "",
+        });
       }
     }
 
-    // If we couldn't find structured reviews, try extracting from markdown
-    if (reviews.length === 0 && bookMarkdown) {
-      // Look for review-like content in markdown
-      const markdownReviewPattern = /(?:★{1,5}|⭐{1,5}|\d\/5)[^\n]*\n([^\n]+(?:\n(?![★⭐\d])[^\n]+)*)/g;
-      let mdMatch;
-      while ((mdMatch = markdownReviewPattern.exec(bookMarkdown)) !== null && reviews.length < 5) {
-        const text = mdMatch[1].trim();
-        if (text.length > 30) {
+    // Fallback: Try to extract from quoted text in markdown
+    if (reviews.length === 0) {
+      const quotePattern = />\s*_"([^"]+)"_/g;
+      let quoteMatch;
+      
+      while ((quoteMatch = quotePattern.exec(bookMarkdown)) !== null && reviews.length < 3) {
+        const quoteText = quoteMatch[1].trim();
+        if (quoteText.length > 30) {
           reviews.push({
-            rating: 0,
-            text: text.substring(0, 500),
-            author: "Goodreads User",
+            rating: 5, // Assume featured quotes are positive
+            text: `"${quoteText}"`,
+            author: "Featured Review",
             date: "",
           });
         }
       }
     }
 
-    console.log(`Found ${reviews.length} reviews`);
+    console.log(`Extracted ${reviews.length} reviews`);
 
     const result: GoodreadsData = {
       rating,

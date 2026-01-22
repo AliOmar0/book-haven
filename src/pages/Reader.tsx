@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { 
-  ArrowLeft, BookOpen, Menu, X, ChevronLeft, ChevronRight, 
-  Bookmark, BookmarkCheck, Highlighter, StickyNote, Settings, 
+import {
+  ArrowLeft, BookOpen, Menu, X, ChevronLeft, ChevronRight,
+  Bookmark, BookmarkCheck, Highlighter, StickyNote, Settings,
   List, Search, Sun, Moon, Palette, Minus, Plus, Type, Tag
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -102,6 +102,7 @@ export default function Reader() {
   const [selectedColor, setSelectedColor] = useState(highlightColors[0]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Keep settings ref in sync without triggering EPUB re-init
   useEffect(() => {
@@ -223,10 +224,21 @@ export default function Reader() {
           // Only compute progress once locations exist
           if (epub.locations.length() > 0 && locationCfi) {
             const progressPercent = epub.locations.percentageFromCfi(locationCfi) * 100;
-            setProgress(progressPercent);
 
-            const locationNum = epub.locations.locationFromCfi(locationCfi);
-            setCurrentPage(typeof locationNum === 'number' ? locationNum : 0);
+            // Only update progress state if user is NOT dragging the slider
+            if (!isDragging) {
+              setProgress(progressPercent);
+            }
+
+            // Get page number (index in locations array)
+            // location.start.location is often more reliable if available
+            const pageIndex = location?.start?.location;
+            if (typeof pageIndex === 'number') {
+              setCurrentPage(pageIndex);
+            } else {
+              const locationNum = epub.locations.locationFromCfi(locationCfi);
+              setCurrentPage(typeof locationNum === 'number' ? locationNum : 0);
+            }
 
             if (user && libraryItem) {
               libraryApi.updateProgress(libraryItem.id, progressPercent, locationCfi).catch(console.error);
@@ -274,7 +286,7 @@ export default function Reader() {
 
         // Apply existing highlights
         highlights.forEach((h) => {
-          rendition.annotations.highlight(h.cfi_range, {}, () => {}, 'highlight', {
+          rendition.annotations.highlight(h.cfi_range, {}, () => { }, 'highlight', {
             fill: h.color,
             'fill-opacity': '0.3',
           });
@@ -305,16 +317,16 @@ export default function Reader() {
     if (!renditionRef.current) return;
 
     const theme = themeStyles[s.theme];
-    
+
     renditionRef.current.themes.default({
       body: {
         background: theme.bg,
         color: theme.text,
         'font-size': `${s.fontSize}px`,
-        'font-family': s.fontFamily === 'serif' 
-          ? 'Georgia, serif' 
-          : s.fontFamily === 'mono' 
-            ? 'Courier, monospace' 
+        'font-family': s.fontFamily === 'serif'
+          ? 'Georgia, serif'
+          : s.fontFamily === 'mono'
+            ? 'Courier, monospace'
             : 'Arial, sans-serif',
         'line-height': s.lineSpacing.toString(),
       },
@@ -333,11 +345,11 @@ export default function Reader() {
     if (isFlipping) return;
     setFlipDirection('right');
     setIsFlipping(true);
-    
+
     setTimeout(() => {
       renditionRef.current?.next();
     }, 150);
-    
+
     setTimeout(() => {
       setIsFlipping(false);
     }, 500);
@@ -347,11 +359,11 @@ export default function Reader() {
     if (isFlipping) return;
     setFlipDirection('left');
     setIsFlipping(true);
-    
+
     setTimeout(() => {
       renditionRef.current?.prev();
     }, 150);
-    
+
     setTimeout(() => {
       setIsFlipping(false);
     }, 500);
@@ -364,7 +376,7 @@ export default function Reader() {
 
   const goToPercentage = useCallback((percentage: number) => {
     if (!epubRef.current || !locationsReady) return;
-    
+
     const cfi = epubRef.current.locations.cfiFromPercentage(percentage / 100);
     if (cfi) {
       renditionRef.current?.display(cfi);
@@ -386,7 +398,7 @@ export default function Reader() {
     if (!user || !book || !currentLocation) return;
 
     const existingBookmark = bookmarks.find((b) => b.location === currentLocation);
-    
+
     try {
       if (existingBookmark) {
         await bookmarksApi.deleteBookmark(existingBookmark.id);
@@ -426,14 +438,14 @@ export default function Reader() {
         selectedColor,
         noteText || undefined
       );
-      
+
       setHighlights((prev) => [newHighlight, ...prev]);
-      
+
       // Apply highlight to rendition
       renditionRef.current?.annotations.highlight(
         selectedText.cfiRange,
         {},
-        () => {},
+        () => { },
         'highlight',
         { fill: selectedColor, 'fill-opacity': '0.3' }
       );
@@ -471,7 +483,7 @@ export default function Reader() {
 
     const results: any[] = [];
     const spine = epubRef.current.spine;
-    
+
     // @ts-ignore - spine.each is valid
     spine.each(async (item: any) => {
       try {
@@ -709,7 +721,7 @@ export default function Reader() {
             <PopoverContent className="w-80" align="end">
               <div className="space-y-4">
                 <h4 className="font-semibold">Reading Settings</h4>
-                
+
                 {/* Theme */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium">Theme</label>
@@ -954,15 +966,14 @@ export default function Reader() {
         {selectedText && user && (
           <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-popover border border-border rounded-lg shadow-lg p-4 space-y-3 w-80">
             <p className="text-sm font-medium line-clamp-2">"{selectedText.text}"</p>
-            
+
             {/* Color picker */}
             <div className="flex items-center gap-2">
               {highlightColors.map((color) => (
                 <button
                   key={color}
-                  className={`w-6 h-6 rounded-full border-2 ${
-                    selectedColor === color ? 'border-foreground' : 'border-transparent'
-                  }`}
+                  className={`w-6 h-6 rounded-full border-2 ${selectedColor === color ? 'border-foreground' : 'border-transparent'
+                    }`}
                   style={{ backgroundColor: color }}
                   onClick={() => setSelectedColor(color)}
                 />
@@ -995,7 +1006,7 @@ export default function Reader() {
       <footer className="px-4 py-2 border-t border-border/30 bg-inherit">
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span className="min-w-[80px]">
-            {locationsReady ? `Page ${currentPage} of ${totalPages}` : 'Loading...'}
+            {locationsReady ? `Page ${currentPage + 1} of ${totalPages}` : 'Loading...'}
           </span>
           <div className="flex-1 mx-4">
             <Slider
@@ -1004,9 +1015,11 @@ export default function Reader() {
               step={0.1}
               disabled={!locationsReady}
               onValueChange={([v]) => {
+                setIsDragging(true);
                 setProgress(v);
               }}
               onValueCommit={([v]) => {
+                setIsDragging(false);
                 goToPercentage(v);
               }}
             />

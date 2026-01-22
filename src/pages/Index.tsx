@@ -13,10 +13,10 @@ import { Loader2 } from 'lucide-react';
 export default function Index() {
   const { user } = useAuth();
   const { toast } = useToast();
-  
+
   const [loading, setLoading] = useState(true);
   const [searchLoading, setSearchLoading] = useState(false);
-  const [featuredBook, setFeaturedBook] = useState<Book | undefined>();
+  const [featuredBooks, setFeaturedBooks] = useState<Book[]>([]);
   const [popularBooks, setPopularBooks] = useState<Book[]>([]);
   const [recentBooks, setRecentBooks] = useState<Book[]>([]);
   const [searchResults, setSearchResults] = useState<Book[] | null>(null);
@@ -28,9 +28,9 @@ export default function Index() {
       try {
         setLoading(true);
         const featured = await booksApi.getFeaturedBooks();
-        
+
         if (featured.length > 0) {
-          setFeaturedBook(featured[0]);
+          setFeaturedBooks(featured.slice(0, 5));
           setPopularBooks(featured.slice(1, 11));
           setRecentBooks(featured.slice(5, 15));
         }
@@ -110,10 +110,10 @@ export default function Index() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       <main className="container py-8 space-y-12">
         {/* Hero Section */}
-        <HeroSection featuredBook={featuredBook} loading={loading} />
+        <HeroSection featuredBooks={featuredBooks} loading={loading} />
 
         {/* Search Bar */}
         <div className="max-w-3xl mx-auto">
@@ -130,7 +130,7 @@ export default function Index() {
           <section className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="font-serif text-2xl font-semibold">
-                {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} 
+                {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
                 {searchQuery && ` for "${searchQuery}"`}
               </h2>
               <button
@@ -143,7 +143,7 @@ export default function Index() {
                 Clear search
               </button>
             </div>
-            
+
             {searchResults.length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6">
                 {searchResults.map((book) => (
@@ -180,7 +180,7 @@ export default function Index() {
               books={popularBooks}
               onAddToLibrary={user ? handleAddToLibrary : undefined}
             />
-            
+
             <BookCarousel
               title="Recently Added"
               books={recentBooks}

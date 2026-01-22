@@ -1,10 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { Header } from '@/components/layout/Header';
 import { HeroSection } from '@/components/books/HeroSection';
 import { SearchBar } from '@/components/books/SearchBar';
 import { BookCarousel } from '@/components/books/BookCarousel';
 import { BookCard } from '@/components/books/BookCard';
-import { booksApi, libraryApi } from '@/lib/api/books';
+import { GenreGrid } from '@/components/books/GenreGrid';
+import { StatsSection } from '@/components/books/StatsSection';
+import { CategorySection } from '@/components/books/CategorySection';
+import { useFeaturedBooks, useSearchBooks, BOOK_CATEGORIES } from '@/hooks/useBooks';
+import { libraryApi } from '@/lib/api/books';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import type { Book } from '@/types/book';
@@ -14,71 +18,47 @@ export default function Index() {
   const { user } = useAuth();
   const { toast } = useToast();
   
-  const [loading, setLoading] = useState(true);
-  const [searchLoading, setSearchLoading] = useState(false);
-  const [featuredBook, setFeaturedBook] = useState<Book | undefined>();
-  const [popularBooks, setPopularBooks] = useState<Book[]>([]);
-  const [recentBooks, setRecentBooks] = useState<Book[]>([]);
-  const [searchResults, setSearchResults] = useState<Book[] | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchParams, setSearchParams] = useState<{
+    query?: string;
+    source?: 'gutenberg' | 'standard_ebooks' | 'all';
+    subject?: string;
+  } | null>(null);
 
-  // Fetch initial books
-  useEffect(() => {
-    async function loadBooks() {
-      try {
-        setLoading(true);
-        const featured = await booksApi.getFeaturedBooks();
-        
-        if (featured.length > 0) {
-          setFeaturedBook(featured[0]);
-          setPopularBooks(featured.slice(1, 11));
-          setRecentBooks(featured.slice(5, 15));
-        }
-      } catch (error) {
-        console.error('Error loading books:', error);
-        toast({
-          title: 'Error loading books',
-          description: 'Please try again later.',
-          variant: 'destructive',
-        });
-      } finally {
-        setLoading(false);
-      }
-    }
+  // Cached featured books query
+  const { data: featuredBooks = [], isLoading: loading } = useFeaturedBooks();
+  
+  // Cached search query
+  const { data: searchData, isLoading: searchLoading } = useSearchBooks(
+    searchParams ? { ...searchParams, limit: 40 } : { query: '' }
+  );
 
-    loadBooks();
-  }, [toast]);
+  const featuredBook = featuredBooks[0];
+  const popularBooks = featuredBooks.slice(1, 11);
+  const recentBooks = featuredBooks.slice(5, 15);
+  const searchResults = searchParams ? searchData?.books : null;
 
   // Handle search
-  const handleSearch = useCallback(async (query: string, filters: any) => {
+  const handleSearch = useCallback((query: string, filters: any) => {
     if (!query && filters.source === 'all' && !filters.subject) {
-      setSearchResults(null);
-      setSearchQuery('');
+      setSearchParams(null);
       return;
     }
 
-    setSearchLoading(true);
-    setSearchQuery(query);
+    setSearchParams({
+      query,
+      source: filters.source === 'all' ? undefined : filters.source,
+      subject: filters.subject,
+    });
+  }, []);
 
-    try {
-      const result = await booksApi.fetchBooks({
-        query,
-        source: filters.source === 'all' ? undefined : filters.source,
-        subject: filters.subject,
-        limit: 40,
-      });
-      setSearchResults(result.books);
-    } catch (error) {
-      console.error('Search error:', error);
-      toast({
-        title: 'Search failed',
-        description: 'Please try again.',
-        variant: 'destructive',
-      });
-    } finally {
-      setSearchLoading(false);
-    }
-  }, [toast]);
+  // Handle genre click from grid
+  const handleGenreClick = useCallback((genre: string) => {
+    setSearchParams({
+      subject: genre,
+    });
+    // Scroll to search results
+    window.scrollTo({ top: 400, behavior: 'smooth' });
+  }, []);
 
   // Handle adding to library
   const handleAddToLibrary = useCallback(async (book: Book) => {
@@ -111,7 +91,7 @@ export default function Index() {
     <div className="min-h-screen bg-background">
       <Header />
       
-      <main className="container py-8 space-y-12">
+      <main className="container py-8 space-y-16">
         {/* Hero Section */}
         <HeroSection featuredBook={featuredBook} loading={loading} />
 
@@ -131,13 +111,11 @@ export default function Index() {
             <div className="flex items-center justify-between">
               <h2 className="font-serif text-2xl font-semibold">
                 {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} 
-                {searchQuery && ` for "${searchQuery}"`}
+                {searchParams?.query && ` for "${searchParams.query}"`}
+                {searchParams?.subject && ` in ${searchParams.subject}`}
               </h2>
               <button
-                onClick={() => {
-                  setSearchResults(null);
-                  setSearchQuery('');
-                }}
+                onClick={() => setSearchParams(null)}
                 className="text-sm text-primary hover:underline"
               >
                 Clear search
@@ -173,19 +151,47 @@ export default function Index() {
             </div>
           </div>
         ) : (
-          // Browse Sections
+          // Browse Sections - More scrollable content
           <>
+            {/* Popular Classics */}
             <BookCarousel
               title="Popular Classics"
               books={popularBooks}
               onAddToLibrary={user ? handleAddToLibrary : undefined}
             />
+
+            {/* Genre Grid */}
+            <GenreGrid onGenreClick={handleGenreClick} />
             
+            {/* Recently Added */}
             <BookCarousel
               title="Recently Added"
               books={recentBooks}
               onAddToLibrary={user ? handleAddToLibrary : undefined}
             />
+
+            {/* Stats Section */}
+            <StatsSection />
+
+            {/* Lazy-loaded Category Sections */}
+            {BOOK_CATEGORIES.slice(0, 4).map((category) => (
+              <CategorySection
+                key={category.id}
+                title={category.label}
+                subject={category.subject}
+                onAddToLibrary={user ? handleAddToLibrary : undefined}
+              />
+            ))}
+
+            {/* Additional lazy-loaded categories */}
+            {BOOK_CATEGORIES.slice(4).map((category) => (
+              <CategorySection
+                key={category.id}
+                title={category.label}
+                subject={category.subject}
+                onAddToLibrary={user ? handleAddToLibrary : undefined}
+              />
+            ))}
           </>
         )}
       </main>

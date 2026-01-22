@@ -22,7 +22,7 @@ interface BookData {
 
 // Fetch high-quality cover from Goodreads using Firecrawl
 async function fetchGoodreadsCover(title: string, author: string): Promise<string | null> {
-  const firecrawlApiKey = Deno.env.get("FIRECRAWL_API_KEY");
+  const firecrawlApiKey = Deno.env.get("FIRECRAWL_API_KEY") || Deno.env.get("FIRECRAWL_API_KEY_1");
   if (!firecrawlApiKey) {
     console.log("FIRECRAWL_API_KEY not configured, skipping Goodreads cover fetch");
     return null;

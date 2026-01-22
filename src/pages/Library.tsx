@@ -122,7 +122,7 @@ function LibraryBookCard({ item, onStatusChange, onRemove }: LibraryBookCardProp
                 </Link>
               </Button>
             )}
-            
+
             {item.status !== 'reading' && (
               <Button
                 size="sm"
@@ -133,7 +133,7 @@ function LibraryBookCard({ item, onStatusChange, onRemove }: LibraryBookCardProp
                 Start Reading
               </Button>
             )}
-            
+
             {item.status === 'reading' && (
               <Button
                 size="sm"
@@ -221,11 +221,11 @@ export default function Library() {
         prev.map((item) =>
           item.id === id
             ? {
-                ...item,
-                status,
-                started_at: status === 'reading' ? new Date().toISOString() : item.started_at,
-                finished_at: status === 'finished' ? new Date().toISOString() : item.finished_at,
-              }
+              ...item,
+              status,
+              started_at: status === 'reading' ? new Date().toISOString() : item.started_at,
+              finished_at: status === 'finished' ? new Date().toISOString() : item.finished_at,
+            }
             : item
         )
       );
@@ -299,29 +299,49 @@ export default function Library() {
         </div>
 
         {/* Stats Overview */}
+        {/* Stats Overview */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <Card>
-            <CardContent className="p-4 text-center">
-              <p className="text-3xl font-bold text-primary">{counts.all}</p>
-              <p className="text-sm text-muted-foreground">Total Books</p>
+          <Card
+            className={`cursor-pointer transition-all hover:shadow-md ${activeTab === 'all' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}
+            onClick={() => setActiveTab('all')}
+          >
+            <CardContent className="p-4 flex flex-col items-center justify-center text-center">
+              <LibraryIcon className="h-5 w-5 mb-2 text-primary" />
+              <p className="text-3xl font-bold text-foreground">{counts.all}</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Total Books</p>
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="p-4 text-center">
-              <p className="text-3xl font-bold text-primary">{counts.reading}</p>
-              <p className="text-sm text-muted-foreground">Reading</p>
+
+          <Card
+            className={`cursor-pointer transition-all hover:shadow-md ${activeTab === 'reading' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}
+            onClick={() => setActiveTab('reading')}
+          >
+            <CardContent className="p-4 flex flex-col items-center justify-center text-center">
+              <BookOpen className="h-5 w-5 mb-2 text-blue-500" />
+              <p className="text-3xl font-bold text-foreground">{counts.reading}</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Reading</p>
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="p-4 text-center">
-              <p className="text-3xl font-bold text-primary">{counts.want_to_read}</p>
-              <p className="text-sm text-muted-foreground">Want to Read</p>
+
+          <Card
+            className={`cursor-pointer transition-all hover:shadow-md ${activeTab === 'want_to_read' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}
+            onClick={() => setActiveTab('want_to_read')}
+          >
+            <CardContent className="p-4 flex flex-col items-center justify-center text-center">
+              <BookMarked className="h-5 w-5 mb-2 text-amber-500" />
+              <p className="text-3xl font-bold text-foreground">{counts.want_to_read}</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Want to Read</p>
             </CardContent>
           </Card>
-          <Card>
-            <CardContent className="p-4 text-center">
-              <p className="text-3xl font-bold text-primary">{counts.finished}</p>
-              <p className="text-sm text-muted-foreground">Finished</p>
+
+          <Card
+            className={`cursor-pointer transition-all hover:shadow-md ${activeTab === 'finished' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}
+            onClick={() => setActiveTab('finished')}
+          >
+            <CardContent className="p-4 flex flex-col items-center justify-center text-center">
+              <Check className="h-5 w-5 mb-2 text-green-500" />
+              <p className="text-3xl font-bold text-foreground">{counts.finished}</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Finished</p>
             </CardContent>
           </Card>
         </div>

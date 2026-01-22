@@ -17,7 +17,7 @@ import { Loader2 } from 'lucide-react';
 export default function Index() {
   const { user } = useAuth();
   const { toast } = useToast();
-  
+
   const [searchParams, setSearchParams] = useState<{
     query?: string;
     source?: 'gutenberg' | 'standard_ebooks' | 'all';
@@ -26,7 +26,7 @@ export default function Index() {
 
   // Cached featured books query
   const { data: featuredBooks = [], isLoading: loading } = useFeaturedBooks();
-  
+
   // Cached search query
   const { data: searchData, isLoading: searchLoading } = useSearchBooks(
     searchParams ? { ...searchParams, limit: 40 } : { query: '' }
@@ -90,10 +90,10 @@ export default function Index() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       <main className="container py-8 space-y-16">
         {/* Hero Section */}
-        <HeroSection featuredBook={featuredBook} loading={loading} />
+        <HeroSection featuredBooks={featuredBooks} loading={loading} />
 
         {/* Search Bar */}
         <div className="max-w-3xl mx-auto">
@@ -110,7 +110,7 @@ export default function Index() {
           <section className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="font-serif text-2xl font-semibold">
-                {searchResults.length} result{searchResults.length !== 1 ? 's' : ''} 
+                {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
                 {searchParams?.query && ` for "${searchParams.query}"`}
                 {searchParams?.subject && ` in ${searchParams.subject}`}
               </h2>
@@ -121,7 +121,7 @@ export default function Index() {
                 Clear search
               </button>
             </div>
-            
+
             {searchResults.length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6">
                 {searchResults.map((book) => (
@@ -162,7 +162,7 @@ export default function Index() {
 
             {/* Genre Grid */}
             <GenreGrid onGenreClick={handleGenreClick} />
-            
+
             {/* Recently Added */}
             <BookCarousel
               title="Recently Added"

@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
-import { Star, Clock, BookOpen } from 'lucide-react';
+import { Star, Clock } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { LazyBookImage } from './LazyBookImage';
 import { cn } from '@/lib/utils';
 import type { Book } from '@/types/book';
 
@@ -26,25 +27,18 @@ export function BookCard({ book, showAddButton = true, onAddToLibrary, className
       className
     )}>
       <Link to={`/book/${book.id}`} className="block">
-        {/* Cover Image */}
+        {/* Cover Image with Lazy Loading */}
         <div className="relative aspect-[2/3] overflow-hidden bg-muted">
-          {book.cover_url ? (
-            <img
-              src={book.cover_url}
-              alt={`Cover of ${book.title}`}
-              className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-              loading="lazy"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5">
-              <BookOpen className="h-12 w-12 text-primary/40" />
-            </div>
-          )}
+          <LazyBookImage
+            src={book.cover_url}
+            alt={`Cover of ${book.title}`}
+            className="w-full h-full transition-transform duration-300 group-hover:scale-105"
+          />
           
           {/* Source Badge */}
           <Badge 
             variant="secondary" 
-            className="absolute top-2 right-2 text-xs bg-background/90 backdrop-blur-sm"
+            className="absolute top-2 right-2 text-xs bg-background/90 backdrop-blur-sm z-10"
           >
             {book.source === 'gutenberg' ? 'Gutenberg' : 'Standard Ebooks'}
           </Badge>

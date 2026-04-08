@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Header } from '@/components/layout/Header';
 import { HeroSection } from '@/components/books/HeroSection';
 import { SearchBar } from '@/components/books/SearchBar';
@@ -35,6 +35,7 @@ export default function Index() {
   const featuredBook = featuredBooks[0];
   const popularBooks = featuredBooks.slice(1, 11);
   const recentBooks = featuredBooks.slice(5, 15);
+  const trendingBooks = featuredBooks.slice(20, 30);
   const searchResults = searchParams ? searchData?.books : null;
 
   // Handle search
@@ -54,6 +55,7 @@ export default function Index() {
   // Handle genre click from grid
   const handleGenreClick = useCallback((genre: string) => {
     setSearchParams({
+      query: '',
       subject: genre,
     });
     // Scroll to search results
@@ -110,7 +112,7 @@ export default function Index() {
           <section className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="font-serif text-2xl font-semibold">
-                {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+                {searchResults?.length || 0} result{(searchResults?.length || 0) !== 1 ? 's' : ''}
                 {searchParams?.query && ` for "${searchParams.query}"`}
                 {searchParams?.subject && ` in ${searchParams.subject}`}
               </h2>
@@ -122,7 +124,7 @@ export default function Index() {
               </button>
             </div>
 
-            {searchResults.length > 0 ? (
+            {Array.isArray(searchResults) && searchResults.length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6">
                 {searchResults.map((book) => (
                   <BookCard
@@ -134,11 +136,12 @@ export default function Index() {
                 ))}
               </div>
             ) : (
-              <div className="text-center py-20 text-muted-foreground">
+              <div className="text-center py-20 text-muted-foreground bg-muted/20 rounded-xl border border-dashed border-border">
                 <p>No books found. Try adjusting your search.</p>
               </div>
             )}
           </section>
+
         ) : loading ? (
           <div className="space-y-8">
             <div className="animate-pulse space-y-4">

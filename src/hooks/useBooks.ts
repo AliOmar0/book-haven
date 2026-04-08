@@ -32,16 +32,19 @@ export function useSearchBooks(params: {
   page?: number;
   limit?: number;
 }) {
-  const hasParams = params.query || (params.source && params.source !== 'all') || params.subject;
+  const query = params.query?.trim() || '';
+  const hasParams = query.length > 0 || (params.source && params.source !== 'all') || params.subject;
   
   return useQuery({
-    queryKey: ['books', 'search', params],
-    queryFn: () => booksApi.fetchBooks(params),
-    staleTime: STALE_TIME,
+    queryKey: ['books', 'search', { ...params, query }],
+    queryFn: () => booksApi.fetchBooks({ ...params, query }),
+    staleTime: 10 * 60 * 1000, // 10 minutes for search results
     gcTime: CACHE_TIME,
     enabled: !!hasParams,
+    retry: 1, // Only retry once to avoid infinite loading on persistent errors
   });
 }
+
 
 export function useBook(id: string) {
   return useQuery({

@@ -16,13 +16,13 @@ interface BookCardProps {
 
 export function BookCard({ book, showAddButton = true, onAddToLibrary, className }: BookCardProps) {
   // Estimate reading time (average 250 words per minute)
-  const readingTime = book.word_count 
-    ? Math.ceil(book.word_count / 250 / 60) 
+  const readingTime = book.word_count
+    ? Math.ceil(book.word_count / 250 / 60)
     : null;
 
   return (
     <Card className={cn(
-      "group overflow-hidden border-border/50 bg-card hover:shadow-book-hover transition-all duration-300",
+      "group overflow-hidden border-border/50 bg-card hover:shadow-book-hover transition-all duration-300 h-full flex flex-col",
       "hover:-translate-y-1",
       className
     )}>
@@ -34,19 +34,14 @@ export function BookCard({ book, showAddButton = true, onAddToLibrary, className
             alt={`Cover of ${book.title}`}
             className="w-full h-full transition-transform duration-300 group-hover:scale-105"
           />
-          
+
           {/* Source Badge */}
-          <Badge 
-            variant="secondary" 
-            className="absolute top-2 right-2 text-xs bg-background/90 backdrop-blur-sm z-10"
-          >
-            {book.source === 'gutenberg' ? 'Gutenberg' : 'Standard Ebooks'}
-          </Badge>
+          {/* Source Badge Removed */}
         </div>
       </Link>
 
-      <CardContent className="p-4 space-y-3">
-        <Link to={`/book/${book.id}`} className="block space-y-1">
+      <CardContent className="p-4 space-y-3 flex flex-col flex-1">
+        <Link to={`/book/${book.id}`} className="block space-y-1 flex-1">
           <h3 className="font-serif font-semibold text-foreground line-clamp-2 group-hover:text-primary transition-colors">
             {book.title}
           </h3>
@@ -56,7 +51,7 @@ export function BookCard({ book, showAddButton = true, onAddToLibrary, className
         </Link>
 
         {/* Meta Info */}
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="flex items-center gap-3 text-xs text-muted-foreground mt-auto">
           {/* Rating */}
           <div className="flex items-center gap-1">
             <Star className="h-3.5 w-3.5 fill-gold text-gold" />

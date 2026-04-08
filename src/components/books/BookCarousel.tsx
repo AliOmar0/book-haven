@@ -18,12 +18,12 @@ interface BookCarouselProps {
   onViewAll?: () => void;
 }
 
-export function BookCarousel({ 
-  title, 
-  books, 
-  onAddToLibrary, 
+export function BookCarousel({
+  title,
+  books,
+  onAddToLibrary,
   showViewAll = false,
-  onViewAll 
+  onViewAll
 }: BookCarouselProps) {
   if (books.length === 0) return null;
 
@@ -43,7 +43,8 @@ export function BookCarousel({
       <Carousel
         opts={{
           align: 'start',
-          loop: false,
+          loop: true,
+          dragFree: true,
         }}
         className="w-full"
       >

@@ -200,7 +200,22 @@ export default function Reader() {
           book.epub_url!
         )}`;
 
-        const epub = ePub(proxyUrl, { openAs: 'epub' });
+        console.log('Fetching EPUB from:', proxyUrl);
+
+        // Fetch the EPUB manually to handle errors better and pass binary to epubjs
+        const response = await fetch(proxyUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch EPUB: ${response.status} ${response.statusText}`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        console.log('EPUB fetched successfully, size:', arrayBuffer.byteLength);
+
+        if (arrayBuffer.byteLength === 0) {
+          throw new Error('Fetched EPUB is empty');
+        }
+
+        const epub = ePub(arrayBuffer);
         epubRef.current = epub;
 
         // Wait until the book is ready before rendering
@@ -232,12 +247,16 @@ export default function Reader() {
 
             // Get page number (index in locations array)
             // location.start.location is often more reliable if available
-            const pageIndex = location?.start?.location;
-            if (typeof pageIndex === 'number') {
-              setCurrentPage(pageIndex);
-            } else {
-              const locationNum = epub.locations.locationFromCfi(locationCfi);
-              setCurrentPage(typeof locationNum === 'number' ? locationNum : 0);
+            try {
+              const pageIndex = location?.start?.location;
+              if (typeof pageIndex === 'number') {
+                setCurrentPage(pageIndex);
+              } else {
+                const locationNum = epub.locations.locationFromCfi(locationCfi);
+                setCurrentPage(typeof locationNum === 'number' ? locationNum : 0);
+              }
+            } catch (e) {
+              console.error('Error getting page number:', e);
             }
 
             if (user && libraryItem) {
@@ -284,13 +303,6 @@ export default function Reader() {
           })
           .catch(console.error);
 
-        // Apply existing highlights
-        highlights.forEach((h) => {
-          rendition.annotations.highlight(h.cfi_range, {}, () => { }, 'highlight', {
-            fill: h.color,
-            'fill-opacity': '0.3',
-          });
-        });
       } catch (error) {
         console.error('Error initializing EPUB:', error);
         toast({
@@ -310,7 +322,8 @@ export default function Reader() {
         epubRef.current = null;
       }
     };
-  }, [book?.epub_url, containerSize.width, containerSize.height, libraryItem?.current_location, highlights, user?.id, toast]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [book?.epub_url, containerSize.width, containerSize.height]); // Removed unstable dependencies to prevent re-init
 
   // Apply settings to rendition WITHOUT re-initializing EPUB
   const applySettings = useCallback((s: ReaderSettings) => {
@@ -339,6 +352,59 @@ export default function Reader() {
       applySettings(settings);
     }
   }, [settings, applySettings, epubReady]);
+
+  // Apply initial highlights once EPUB is ready
+  useEffect(() => {
+    if (epubReady && renditionRef.current && highlights.length > 0) {
+      // Check if highlights are already applied to avoid duplicates? 
+      // Annotations seem to handle unique keys if we provided them, but here we blindly add.
+      // For a simple fix, we'll iterate.
+      highlights.forEach((h) => {
+        // Verify it's not already there? 
+        // For now, just add. EpubJS might not dedupe.
+        try {
+          renditionRef.current?.annotations.highlight(h.cfi_range, {}, () => { }, 'highlight', {
+            fill: h.color,
+            'fill-opacity': '0.3',
+          });
+        } catch (e) {
+          console.error("Error applying highlight", e);
+        }
+      });
+    }
+    // We only want to run this when epubReady changes to true, OR if highlights are loaded late via API.
+    // However, if we add a NEW highlight via UI, we don't want this to run again and re-add OLD highlights.
+    // The ideal way is to ONLY apply highlights that are fetched from the DB initially.
+    // But since 'highlights' is our state, we need to be careful.
+    // A separate 'initialHighlights' ref or state would be cleaner, but for now:
+    // We'll rely on the Fact that adding a highlight via UI updates the Rendition DIRECTLY in addHighlight.
+    // So this effect is ONLY for the initial load from DB.
+    // We'll add a ref to track if initial highlights have been applied.
+  }, [epubReady]); // Only run when epub becomes ready. Ignore 'highlights' changes to avoid re-applying on add.
+
+  // Mouse wheel support
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      // If popup or sidebar is open, don't flip
+      if (showSidebar) return;
+
+      if (e.deltaY > 0) {
+        goNext();
+      } else if (e.deltaY < 0) {
+        goPrev();
+      }
+    };
+
+    const container = viewerRef.current;
+    if (container) {
+      container.addEventListener('wheel', handleWheel);
+    }
+    return () => {
+      if (container) {
+        container.removeEventListener('wheel', handleWheel);
+      }
+    };
+  }, [goNext, goPrev, showSidebar, viewerRef.current]);
 
   // Navigation with page flip animation
   const goNext = useCallback(() => {

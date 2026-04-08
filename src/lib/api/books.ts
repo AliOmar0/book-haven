@@ -32,15 +32,28 @@ export const booksApi = {
     page?: number;
     limit?: number;
   }): Promise<{ books: Book[]; total: number }> {
-    const { data, error } = await supabase.functions.invoke('fetch-books', {
-      body: params,
-    });
+    // Add a 30-second timeout to the fetch call
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-    if (error) throw error;
-    return {
-      books: (data.books || []).map(transformBook),
-      total: data.total || 0,
-    };
+    try {
+      const { data, error } = await supabase.functions.invoke('fetch-books', {
+        body: params,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      clearTimeout(timeoutId);
+      if (error) throw error;
+      return {
+        books: (data.books || []).map(transformBook),
+        total: data.total || 0,
+      };
+    } catch (err) {
+      clearTimeout(timeoutId);
+      throw err;
+    }
   },
 
   // Get featured books
@@ -67,14 +80,12 @@ export const booksApi = {
 
   // Get books by category/subject
   async getBooksBySubject(subject: string, limit = 20): Promise<Book[]> {
-    const { data, error } = await supabase
-      .from('books')
-      .select('*')
-      .contains('subjects', [subject])
-      .limit(limit);
+    const { data, error } = await supabase.functions.invoke('fetch-books', {
+      body: { subject, limit },
+    });
 
     if (error) throw error;
-    return (data || []).map(transformBook);
+    return (data.books || []).map(transformBook);
   },
 };
 

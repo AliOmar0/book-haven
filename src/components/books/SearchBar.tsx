@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Search, X, Filter } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -63,9 +63,11 @@ export function SearchBar({ onSearch, className, placeholder = 'Search for books
     onSearch('', { source: 'all' });
   };
 
-  const activeFiltersCount = Object.values(filters).filter(
-    (v) => v && v !== 'all'
-  ).length;
+  const activeFiltersCount = [
+    filters.source && filters.source !== 'all' ? 1 : 0,
+    filters.subject ? 1 : 0,
+    filters.language ? 1 : 0
+  ].reduce((a, b) => a + b, 0);
 
   return (
     <div className={cn('flex flex-col sm:flex-row gap-2', className)}>
@@ -94,29 +96,29 @@ export function SearchBar({ onSearch, className, placeholder = 'Search for books
       <div className="flex gap-2">
         <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
           <PopoverTrigger asChild>
-            <Button variant="outline" className="h-12 gap-2 relative">
+            <Button variant="outline" className="h-12 gap-2 shrink-0">
               <Filter className="h-4 w-4" />
               <span className="hidden sm:inline">Filters</span>
               {activeFiltersCount > 0 && (
-                <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center">
+                <div className="ml-1 bg-primary text-primary-foreground text-[10px] font-bold rounded-full h-5 w-5 flex items-center justify-center">
                   {activeFiltersCount}
-                </Badge>
+                </div>
               )}
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-72" align="end">
+          <PopoverContent className="w-80" align="end" sideOffset={8}>
             <div className="space-y-4">
-              <h4 className="font-medium">Filter Books</h4>
+              <h4 className="font-serif font-base text-lg font-semibold px-1">Filter Books</h4>
               
               <div className="space-y-2">
-                <label className="text-sm text-muted-foreground">Source</label>
+                <label className="text-xs font-medium text-muted-foreground px-1">Source</label>
                 <Select
-                  value={filters.source}
+                  value={filters.source || 'all'}
                   onValueChange={(value) =>
                     setFilters((f) => ({ ...f, source: value as SearchFilters['source'] }))
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-11">
                     <SelectValue placeholder="All sources" />
                   </SelectTrigger>
                   <SelectContent>
@@ -128,18 +130,18 @@ export function SearchBar({ onSearch, className, placeholder = 'Search for books
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm text-muted-foreground">Subject</label>
+                <label className="text-xs font-medium text-muted-foreground px-1">Subject</label>
                 <Select
-                  value={filters.subject || ''}
+                  value={filters.subject || 'all-subjects'}
                   onValueChange={(value) =>
-                    setFilters((f) => ({ ...f, subject: value || undefined }))
+                    setFilters((f) => ({ ...f, subject: value === 'all-subjects' ? undefined : value }))
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className="h-11">
                     <SelectValue placeholder="All subjects" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Subjects</SelectItem>
+                    <SelectItem value="all-subjects">All Subjects</SelectItem>
                     {SUBJECTS.map((subject) => (
                       <SelectItem key={subject} value={subject.toLowerCase()}>
                         {subject}
@@ -149,24 +151,28 @@ export function SearchBar({ onSearch, className, placeholder = 'Search for books
                 </Select>
               </div>
 
-              <Button
-                variant="secondary"
-                className="w-full"
-                onClick={() => {
-                  setFiltersOpen(false);
-                  handleSearch();
-                }}
-              >
-                Apply Filters
-              </Button>
+              <div className="pt-2">
+                <Button
+                  variant="default"
+                  className="w-full h-11"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setFiltersOpen(false);
+                    handleSearch();
+                  }}
+                >
+                  Apply Filters
+                </Button>
+              </div>
             </div>
           </PopoverContent>
         </Popover>
 
-        <Button onClick={handleSearch} className="h-12 px-6">
+        <Button onClick={handleSearch} className="h-12 px-6 font-medium">
           Search
         </Button>
       </div>
     </div>
   );
 }
+

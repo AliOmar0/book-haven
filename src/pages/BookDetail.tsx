@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, BookOpen, Star, Clock, Calendar, Globe, Library, Play, Check, Heart, ExternalLink, Loader2 } from 'lucide-react';
+import { ArrowLeft, Star, Clock, Calendar, Globe, Library, Play, Check, Heart, ExternalLink, Loader2 } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import type { Book, UserLibraryItem, UserRating } from '@/types/book';
 import { GoodreadsRatings } from '@/components/books/GoodreadsRatings';
+import { LazyBookImage } from '@/components/books/LazyBookImage';
+import { getGoodreadsRating } from '@/data/goodreads';
 
 // Star rating component
 function StarRating({ rating, onRate, readonly = false, size = 'md' }: {
@@ -36,11 +38,10 @@ function StarRating({ rating, onRate, readonly = false, size = 'md' }: {
           onClick={() => onRate?.(star)}
         >
           <Star
-            className={`${sizeClasses[size]} ${
-              star <= (hovered || rating)
-                ? 'fill-gold text-gold'
-                : 'text-muted-foreground/30'
-            } transition-colors`}
+            className={`${sizeClasses[size]} ${star <= (hovered || rating)
+              ? 'fill-gold text-gold'
+              : 'text-muted-foreground/30'
+              } transition-colors`}
           />
         </button>
       ))}
@@ -150,18 +151,18 @@ export default function BookDetail() {
     try {
       setSubmittingRating(true);
       await ratingsApi.rateBook(user.id, book.id, newRating, newReview || undefined);
-      
+
       // Refresh ratings
       const [ratings, userRate, updatedBook] = await Promise.all([
         ratingsApi.getRatings(book.id),
         ratingsApi.getUserRating(user.id, book.id),
         booksApi.getBook(book.id),
       ]);
-      
+
       setAllRatings(ratings);
       setUserRating(userRate);
       if (updatedBook) setBook(updatedBook);
-      
+
       toast({
         title: 'Rating submitted',
         description: 'Thank you for your rating!',
@@ -179,8 +180,8 @@ export default function BookDetail() {
   }, [user, book, newRating, newReview, toast]);
 
   // Estimate reading time
-  const readingTime = book?.word_count 
-    ? Math.ceil(book.word_count / 250 / 60) 
+  const readingTime = book?.word_count
+    ? Math.ceil(book.word_count / 250 / 60)
     : null;
 
   if (loading) {
@@ -199,7 +200,7 @@ export default function BookDetail() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       <main className="container py-8">
         {/* Back Button */}
         <Button
@@ -217,17 +218,11 @@ export default function BookDetail() {
           <div className="lg:col-span-1 space-y-6">
             {/* Cover */}
             <div className="relative aspect-[2/3] max-w-sm mx-auto rounded-lg overflow-hidden shadow-book">
-              {book.cover_url ? (
-                <img
-                  src={book.cover_url}
-                  alt={`Cover of ${book.title}`}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/5">
-                  <BookOpen className="h-20 w-20 text-primary/40" />
-                </div>
-              )}
+              <LazyBookImage
+                src={book.cover_url}
+                alt={`Cover of ${book.title}`}
+                className="w-full h-full"
+              />
             </div>
 
             {/* Action Buttons */}
@@ -333,19 +328,28 @@ export default function BookDetail() {
               <p className="text-lg text-muted-foreground">
                 by <span className="text-foreground font-medium">{book.author}</span>
               </p>
-              
+
               {/* Rating Summary */}
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <StarRating rating={Math.round(book.average_rating)} readonly size="lg" />
-                  <span className="text-lg font-semibold">
-                    {book.average_rating > 0 ? book.average_rating.toFixed(1) : 'N/A'}
-                  </span>
-                </div>
-                <span className="text-muted-foreground">
-                  {book.rating_count} {book.rating_count === 1 ? 'rating' : 'ratings'}
-                </span>
-              </div>
+              {/* Rating Summary - Moved to Goodreads Ratings */}
+
+              {/* Goodreads Rating Integration */}
+              {(() => {
+                const grData = getGoodreadsRating(book.title);
+                if (!grData) return null;
+
+                return (
+                  <div className="flex items-center gap-2 mt-1 px-3 py-1.5 bg-[#F4F1EA] dark:bg-amber-950/30 rounded-md w-fit border border-[#E9E5D6] dark:border-amber-900/50">
+                    <span className="font-serif font-bold text-[#382110] dark:text-amber-100 flex items-center gap-1">
+                      g
+                      <span className="text-xs font-sans font-normal text-muted-foreground ml-1">Goodreads:</span>
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <span className="font-bold text-foreground">{grData.rating}</span>
+                      <span className="text-xs text-muted-foreground">({(grData.count / 1000000).toFixed(1)}M ratings)</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <Separator />
@@ -371,7 +375,7 @@ export default function BookDetail() {
                     </Badge>
                   ))}
                 </div>
-            </div>
+              </div>
             )}
 
             <Separator />
@@ -455,7 +459,7 @@ export default function BookDetail() {
             )}
           </div>
         </div>
-      </main>
-    </div>
+      </main >
+    </div >
   );
 }

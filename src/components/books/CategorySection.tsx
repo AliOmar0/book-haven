@@ -37,7 +37,7 @@ export function CategorySection({ title, subject, onAddToLibrary }: CategorySect
 
   const { data: books = [], isLoading } = useBooksBySubject(
     isInView ? subject : '',
-    10
+    60
   );
 
   return (

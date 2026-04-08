@@ -5,6 +5,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// @ts-ignore
 serve(async (req) => {
   // Handle CORS preflight
   if (req.method === "OPTIONS") {

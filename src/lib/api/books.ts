@@ -32,20 +32,24 @@ export const booksApi = {
     page?: number;
     limit?: number;
   }): Promise<{ books: Book[]; total: number }> {
-    // Add a 30-second timeout to the fetch call
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     try {
-      const { data, error } = await supabase.functions.invoke('fetch-books', {
-        body: params,
+
+      const response = await fetch('/api/fetch-books', {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify(params),
+        signal: controller.signal
       });
 
       clearTimeout(timeoutId);
-      if (error) throw error;
+      if (!response.ok) throw new Error('API request failed');
+      const data = await response.json();
+      
       return {
         books: (data.books || []).map(transformBook),
         total: data.total || 0,
@@ -54,6 +58,7 @@ export const booksApi = {
       clearTimeout(timeoutId);
       throw err;
     }
+
   },
 
   // Get featured books

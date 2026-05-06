@@ -1,0 +1,224 @@
+import { useParams, Link } from "wouter";
+import { useBookDetail, useBookRatings, getCoverUrl } from "@/hooks/use-open-library";
+import { useGutenbergMatch } from "@/hooks/use-gutenberg";
+import { useFavorites, useReviews } from "@/hooks/use-local-library";
+import { Layout } from "@/components/layout";
+import { CoverImage } from "@/components/cover-image";
+import { StarRating } from "@/components/star-rating";
+import { BookmarkPlus, BookmarkMinus, BookOpen, MessageSquareQuote, Calendar } from "lucide-react";
+import { useState } from "react";
+import { format } from "date-fns";
+
+export default function BookDetail() {
+  const { workId } = useParams();
+  const safeWorkId = workId || "";
+  
+  const { data: book, isLoading, error } = useBookDetail(safeWorkId);
+  const { data: ratings } = useBookRatings(safeWorkId);
+  const { isFavorite, toggleFavorite } = useFavorites();
+  const { reviews, addReview } = useReviews(safeWorkId);
+  
+  // Try to find readable version
+  const { data: gutenberg } = useGutenbergMatch(book?.title, book?.authors?.[0]?.author?.key); // ideally we'd resolve author name
+
+  const [reviewText, setReviewText] = useState("");
+  const [reviewStars, setReviewStars] = useState(0);
+  const [reviewName, setReviewName] = useState("");
+
+  const handleReviewSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reviewText || !reviewStars) return;
+    addReview({ name: reviewName || "Anonymous Reader", stars: reviewStars, text: reviewText });
+    setReviewText("");
+    setReviewStars(0);
+    setReviewName("");
+  };
+
+  if (isLoading) {
+    return (
+      <Layout>
+        <div className="max-w-5xl mx-auto px-6 py-12 animate-pulse flex flex-col md:flex-row gap-10">
+          <div className="w-full md:w-1/3 aspect-[2/3] bg-muted rounded-md" />
+          <div className="flex-1 space-y-6 pt-4">
+            <div className="h-10 bg-muted rounded w-3/4" />
+            <div className="h-6 bg-muted rounded w-1/2" />
+            <div className="space-y-3 pt-6">
+              <div className="h-4 bg-muted rounded w-full" />
+              <div className="h-4 bg-muted rounded w-full" />
+              <div className="h-4 bg-muted rounded w-4/5" />
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (error || !book) {
+    return (
+      <Layout>
+        <div className="max-w-lg mx-auto text-center py-32 px-6">
+          <h2 className="font-serif text-3xl font-bold mb-4">This volume is misplaced</h2>
+          <p className="text-muted-foreground">We couldn't locate this book in our archives.</p>
+        </div>
+      </Layout>
+    );
+  }
+
+  const coverUrl = getCoverUrl(book.covers?.[0], "L");
+  const isFav = isFavorite(safeWorkId);
+  const authorName = "Author Info Available in Search Docs"; // Simplification since detailed author needs another API call in OpenLibrary
+  const description = typeof book.description === "object" ? book.description.value : book.description;
+
+  return (
+    <Layout>
+      <div className="bg-muted/30 border-b border-border/50">
+        <div className="max-w-6xl mx-auto px-6 py-12 md:py-20 flex flex-col md:flex-row gap-10 lg:gap-16">
+          {/* Cover Column */}
+          <div className="w-full max-w-sm mx-auto md:w-1/3 shrink-0">
+            <div className="sticky top-24">
+              <div className="rounded-lg shadow-2xl overflow-hidden mb-6 border border-border/40">
+                <CoverImage src={coverUrl} alt={book.title} className="w-full" />
+              </div>
+              
+              <div className="flex flex-col gap-3">
+                {gutenberg && (
+                  <Link
+                    href={`/read/${safeWorkId}?epub=${encodeURIComponent(gutenberg.formats["application/epub+zip"])}`}
+                    className="flex items-center justify-center gap-2 w-full h-12 bg-primary text-primary-foreground font-medium rounded-md hover:bg-primary/90 transition-colors shadow-md"
+                  >
+                    <BookOpen className="w-5 h-5" />
+                    Read Now
+                  </Link>
+                )}
+                
+                <button
+                  onClick={() => toggleFavorite({ workId: safeWorkId, title: book.title, coverUrl })}
+                  className="flex items-center justify-center gap-2 w-full h-12 border-2 border-primary/20 text-primary font-medium rounded-md hover:bg-primary/5 transition-colors"
+                >
+                  {isFav ? <BookmarkMinus className="w-5 h-5" /> : <BookmarkPlus className="w-5 h-5" />}
+                  {isFav ? "Remove from Shelf" : "Add to Shelf"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Details Column */}
+          <div className="flex-1 space-y-8">
+            <div>
+              <h1 className="font-serif text-4xl md:text-5xl lg:text-6xl font-bold leading-tight text-foreground mb-3">
+                {book.title}
+              </h1>
+              {/* Author would go here if fetched properly */}
+              
+              {ratings && (
+                <div className="flex items-center gap-4 mt-6 p-4 bg-card rounded-md border border-border shadow-sm inline-flex">
+                  <div className="flex flex-col">
+                    <span className="text-sm text-muted-foreground uppercase tracking-wider font-semibold mb-1">Community Rating</span>
+                    <div className="flex items-center gap-3">
+                      <StarRating value={ratings.summary.average || 0} readOnly />
+                      <span className="font-medium text-lg">{ratings.summary.average?.toFixed(1) || "N/A"}</span>
+                      <span className="text-muted-foreground text-sm">({ratings.summary.count || 0} votes)</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {description && (
+              <div className="prose prose-stone dark:prose-invert max-w-none">
+                <h3 className="font-serif text-2xl font-semibold mb-4">Synopsis</h3>
+                <div className="whitespace-pre-wrap text-lg leading-relaxed text-foreground/80 font-serif">
+                  {description}
+                </div>
+              </div>
+            )}
+
+            {book.subjects && book.subjects.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Subjects</h3>
+                <div className="flex flex-wrap gap-2">
+                  {book.subjects.slice(0, 10).map(sub => (
+                    <span key={sub} className="px-3 py-1 bg-muted text-muted-foreground rounded-full text-sm font-medium">
+                      {sub}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Reviews Section */}
+      <div className="max-w-4xl mx-auto px-6 py-16">
+        <div className="flex items-center gap-3 mb-10">
+          <MessageSquareQuote className="w-8 h-8 text-primary" />
+          <h2 className="font-serif text-3xl font-bold">Reader's Notes</h2>
+        </div>
+
+        <div className="bg-card p-6 md:p-8 rounded-lg border border-border shadow-sm mb-12">
+          <h3 className="font-semibold text-lg mb-4">Add your thoughts</h3>
+          <form onSubmit={handleReviewSubmit} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">Rating</label>
+              <StarRating value={reviewStars} onChange={setReviewStars} />
+            </div>
+            <div>
+              <label htmlFor="name" className="block text-sm font-medium mb-2">Pen Name (Optional)</label>
+              <input
+                id="name"
+                type="text"
+                value={reviewName}
+                onChange={e => setReviewName(e.target.value)}
+                className="w-full md:w-1/2 h-10 px-3 rounded-md border border-input bg-background"
+                placeholder="How shall we record you?"
+              />
+            </div>
+            <div>
+              <label htmlFor="review" className="block text-sm font-medium mb-2">Your Notes</label>
+              <textarea
+                id="review"
+                value={reviewText}
+                onChange={e => setReviewText(e.target.value)}
+                className="w-full h-32 p-3 rounded-md border border-input bg-background resize-none"
+                placeholder="What did you think of this volume?"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={!reviewText || !reviewStars}
+              className="px-6 py-2 bg-primary text-primary-foreground font-medium rounded-md hover:bg-primary/90 disabled:opacity-50"
+            >
+              Record Notes
+            </button>
+          </form>
+        </div>
+
+        <div className="space-y-6">
+          {reviews.length === 0 ? (
+            <div className="text-center py-12 border border-dashed border-border rounded-lg">
+              <p className="text-muted-foreground italic">Be the first to record notes on this volume.</p>
+            </div>
+          ) : (
+            reviews.map(review => (
+              <div key={review.id} className="p-6 bg-background border border-border rounded-lg">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h4 className="font-semibold">{review.name}</h4>
+                    <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                      <Calendar className="w-3.5 h-3.5" />
+                      {format(review.createdAt, "MMM d, yyyy")}
+                    </div>
+                  </div>
+                  <StarRating value={review.stars} readOnly />
+                </div>
+                <p className="whitespace-pre-wrap text-foreground/90 leading-relaxed">{review.text}</p>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </Layout>
+  );
+}

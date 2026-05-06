@@ -4,9 +4,10 @@ import ePub, { Book, Rendition, NavItem } from "epubjs";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChevronLeft, ChevronRight, Settings, List,
-  Moon, Sun, Coffee, ZoomIn, ZoomOut, X,
+  Moon, Sun, Coffee, ZoomIn, ZoomOut, X, Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useEpubData } from "@/hooks/use-epub-data";
 
 type Theme = "light" | "dark" | "sepia";
 
@@ -22,7 +23,7 @@ const THEME_FG: Record<Theme, string> = {
 };
 
 export default function Read() {
-  const { workId } = useParams();
+  useParams();
   const epubUrl = new URLSearchParams(window.location.search).get("epub");
 
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -34,28 +35,32 @@ export default function Read() {
   const [showSettings, setShowSettings] = useState(false);
   const [showToc, setShowToc] = useState(false);
   const [toc, setToc] = useState<NavItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [renderReady, setRenderReady] = useState(false);
+  const [renderError, setRenderError] = useState(false);
   const [bookTitle, setBookTitle] = useState("");
   const [progress, setProgress] = useState(0);
 
   const [flipDir, setFlipDir] = useState<1 | -1 | 0>(0);
   const [flipKey, setFlipKey] = useState(0);
 
-  // Initialize epub once per epubUrl
+  const {
+    data: epubData,
+    isLoading: isDownloading,
+    error: downloadError,
+    isFetching,
+  } = useEpubData(epubUrl);
+
+  // Mount epubjs once we have the ArrayBuffer
   useEffect(() => {
-    if (!epubUrl || !viewerRef.current) {
-      setError(true);
-      setIsLoading(false);
-      return;
-    }
+    if (!epubData || !viewerRef.current) return;
 
     let cancelled = false;
-    setIsLoading(true);
-    setError(false);
+    setRenderReady(false);
+    setRenderError(false);
 
-    const proxiedUrl = `https://corsproxy.io/?url=${encodeURIComponent(epubUrl)}`;
-    const book = ePub(proxiedUrl);
+    // epubjs mutates the buffer's ownership; clone to be safe across remounts.
+    const buffer = epubData.slice(0);
+    const book = ePub(buffer);
     bookRef.current = book;
 
     const rendition = book.renderTo(viewerRef.current, {
@@ -85,18 +90,14 @@ export default function Read() {
       img: { "max-width": "100%" },
       p: { "line-height": "1.7" },
     });
-    rendition.themes.select("sepia");
-    rendition.themes.fontSize("110%");
+    rendition.themes.select(theme);
+    rendition.themes.fontSize(`${fontSize}%`);
 
     rendition.display().then(() => {
-      if (cancelled) return;
-      setIsLoading(false);
+      if (!cancelled) setRenderReady(true);
     }).catch((err) => {
       console.error("epub display error", err);
-      if (!cancelled) {
-        setError(true);
-        setIsLoading(false);
-      }
+      if (!cancelled) setRenderError(true);
     });
 
     book.loaded.navigation.then((nav) => {
@@ -106,9 +107,7 @@ export default function Read() {
       if (!cancelled) setBookTitle(meta.title || "");
     });
 
-    book.ready.then(() => book.locations.generate(1024)).then(() => {
-      if (cancelled) return;
-    }).catch(() => {});
+    book.ready.then(() => book.locations.generate(1024)).catch(() => {});
 
     rendition.on("relocated", (loc: { start: { percentage?: number } }) => {
       if (cancelled) return;
@@ -117,46 +116,43 @@ export default function Read() {
       }
     });
 
-    rendition.on("keyup", (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") nextPage();
-      if (e.key === "ArrowLeft") prevPage();
-    });
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") nextPage();
-      if (e.key === "ArrowLeft") prevPage();
-    };
-    window.addEventListener("keyup", onKey);
-
     return () => {
       cancelled = true;
-      window.removeEventListener("keyup", onKey);
       try { rendition.destroy(); } catch {}
       try { book.destroy(); } catch {}
       bookRef.current = null;
       renditionRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [epubUrl]);
+  }, [epubData]);
 
-  // Apply theme/fontSize when changed (without remounting rendition)
-  useEffect(() => {
-    renditionRef.current?.themes.select(theme);
-  }, [theme]);
-  useEffect(() => {
-    renditionRef.current?.themes.fontSize(`${fontSize}%`);
-  }, [fontSize]);
+  // Apply theme/fontSize when changed (without remounting)
+  useEffect(() => { renditionRef.current?.themes.select(theme); }, [theme]);
+  useEffect(() => { renditionRef.current?.themes.fontSize(`${fontSize}%`); }, [fontSize]);
 
   const nextPage = useCallback(() => {
+    if (!renderReady) return;
     setFlipDir(1);
     setFlipKey((k) => k + 1);
     renditionRef.current?.next();
-  }, []);
+  }, [renderReady]);
+
   const prevPage = useCallback(() => {
+    if (!renderReady) return;
     setFlipDir(-1);
     setFlipKey((k) => k + 1);
     renditionRef.current?.prev();
-  }, []);
+  }, [renderReady]);
+
+  // Keyboard nav
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight") nextPage();
+      if (e.key === "ArrowLeft") prevPage();
+    };
+    window.addEventListener("keyup", onKey);
+    return () => window.removeEventListener("keyup", onKey);
+  }, [nextPage, prevPage]);
 
   const goTo = (href: string) => {
     renditionRef.current?.display(href);
@@ -180,18 +176,20 @@ export default function Read() {
       <div className="fixed inset-0 flex items-center justify-center bg-background">
         <div className="text-center px-6">
           <p className="font-serif text-2xl mb-3">No book selected</p>
-          <button
-            onClick={() => window.history.back()}
-            className="text-primary hover:underline"
-          >Go back</button>
+          <button onClick={() => window.history.back()} className="text-primary hover:underline">
+            Go back
+          </button>
         </div>
       </div>
     );
   }
 
+  const showLoading = isDownloading || isFetching || (!renderReady && !renderError && !!epubData);
+  const showError = !!downloadError || renderError;
+
   return (
     <div
-      className={cn("fixed inset-0 z-50 flex flex-col transition-colors duration-500")}
+      className="fixed inset-0 z-50 flex flex-col transition-colors duration-500"
       style={{ background: THEME_BG[theme], color: THEME_FG[theme] }}
     >
       <header className="flex items-center justify-between px-4 h-14 border-b border-black/5 dark:border-white/10 shrink-0 z-30 relative">
@@ -202,10 +200,20 @@ export default function Read() {
           {bookTitle}
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => { setShowToc(v => !v); setShowSettings(false); }} className="p-2 hover:bg-black/5 rounded-full transition-colors" aria-label="Contents">
+          <button
+            onClick={() => { setShowToc((v) => !v); setShowSettings(false); }}
+            disabled={!renderReady}
+            className="p-2 hover:bg-black/5 rounded-full transition-colors disabled:opacity-40"
+            aria-label="Contents"
+          >
             <List className="w-5 h-5" />
           </button>
-          <button onClick={() => { setShowSettings(v => !v); setShowToc(false); }} className="p-2 hover:bg-black/5 rounded-full transition-colors" aria-label="Settings">
+          <button
+            onClick={() => { setShowSettings((v) => !v); setShowToc(false); }}
+            disabled={!renderReady}
+            className="p-2 hover:bg-black/5 rounded-full transition-colors disabled:opacity-40"
+            aria-label="Settings"
+          >
             <Settings className="w-5 h-5" />
           </button>
         </div>
@@ -241,11 +249,11 @@ export default function Read() {
             <div className="space-y-3">
               <span className="text-xs font-semibold uppercase tracking-wider opacity-60">Text Size</span>
               <div className="flex items-center gap-3 justify-between">
-                <button onClick={() => setFontSize(s => Math.max(70, s - 10))} className="p-2 hover:bg-black/5 rounded-full">
+                <button onClick={() => setFontSize((s) => Math.max(70, s - 10))} className="p-2 hover:bg-black/5 rounded-full">
                   <ZoomOut className="w-5 h-5" />
                 </button>
                 <span className="font-medium tabular-nums">{fontSize}%</span>
-                <button onClick={() => setFontSize(s => Math.min(220, s + 10))} className="p-2 hover:bg-black/5 rounded-full">
+                <button onClick={() => setFontSize((s) => Math.min(220, s + 10))} className="p-2 hover:bg-black/5 rounded-full">
                   <ZoomIn className="w-5 h-5" />
                 </button>
               </div>
@@ -289,15 +297,27 @@ export default function Read() {
         onTouchEnd={onTouchEnd}
         style={{ perspective: 2200 }}
       >
-        {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
-            <div className="font-serif text-xl opacity-60 animate-pulse">Opening volume…</div>
+        {showLoading && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center z-20 pointer-events-none gap-3">
+            <Loader2 className="w-8 h-8 animate-spin opacity-60" />
+            <div className="font-serif text-lg opacity-60">
+              {isDownloading || isFetching ? "Downloading volume…" : "Opening volume…"}
+            </div>
+            <p className="text-xs opacity-40 max-w-xs text-center px-6">
+              First open may take a few seconds. The book is cached so future page turns are instant.
+            </p>
           </div>
         )}
 
-        {error && (
-          <div className="absolute inset-0 flex items-center justify-center z-20 px-6 text-center">
-            <div className="font-serif text-xl opacity-70">This volume could not be opened.</div>
+        {showError && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center z-20 px-6 text-center gap-3">
+            <div className="font-serif text-xl opacity-80">This volume could not be opened.</div>
+            <p className="text-sm opacity-50 max-w-md">
+              The book may be unavailable or the connection timed out. Please try again later.
+            </p>
+            <button onClick={() => window.location.reload()} className="mt-2 underline opacity-80">
+              Retry
+            </button>
           </div>
         )}
 
@@ -308,19 +328,12 @@ export default function Read() {
           <div ref={viewerRef} className="w-full h-full [&_iframe]:!w-full [&_iframe]:!h-full" />
         </div>
 
-        {/* Page-flip overlay (decorative) */}
         <AnimatePresence>
           {flipDir !== 0 && (
             <motion.div
               key={flipKey}
-              initial={{
-                rotateY: flipDir > 0 ? 0 : -160,
-                opacity: 0.9,
-              }}
-              animate={{
-                rotateY: flipDir > 0 ? -160 : 0,
-                opacity: 0,
-              }}
+              initial={{ rotateY: flipDir > 0 ? 0 : -160, opacity: 0.9 }}
+              animate={{ rotateY: flipDir > 0 ? -160 : 0, opacity: 0 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.55, ease: [0.6, 0.05, 0.3, 1] }}
               className="absolute top-0 bottom-0 z-30 pointer-events-none"
@@ -339,7 +352,6 @@ export default function Read() {
         </AnimatePresence>
       </div>
 
-      {/* Progress bar */}
       <div className="h-1 shrink-0 bg-black/5 relative z-10">
         <div
           className="h-full transition-all"
@@ -348,13 +360,13 @@ export default function Read() {
       </div>
 
       <div className="h-12 flex items-center justify-between px-6 shrink-0 border-t border-black/5 relative z-10">
-        <button onClick={prevPage} className="p-2 hover:bg-black/5 rounded-full transition-colors" aria-label="Previous page">
+        <button onClick={prevPage} disabled={!renderReady} className="p-2 hover:bg-black/5 rounded-full transition-colors disabled:opacity-30" aria-label="Previous page">
           <ChevronLeft className="w-5 h-5" />
         </button>
         <span className="font-serif text-xs opacity-50 tabular-nums">
           {Math.round(progress * 100)}%
         </span>
-        <button onClick={nextPage} className="p-2 hover:bg-black/5 rounded-full transition-colors" aria-label="Next page">
+        <button onClick={nextPage} disabled={!renderReady} className="p-2 hover:bg-black/5 rounded-full transition-colors disabled:opacity-30" aria-label="Next page">
           <ChevronRight className="w-5 h-5" />
         </button>
       </div>

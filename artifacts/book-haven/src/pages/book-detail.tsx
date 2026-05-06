@@ -1,6 +1,7 @@
 import { useParams, Link } from "wouter";
 import { useBookDetail, useBookRatings, getCoverUrl, useAuthorName } from "@/hooks/use-open-library";
 import { useGutenbergMatch } from "@/hooks/use-gutenberg";
+import { useGoogleBooksCover } from "@/hooks/use-google-books";
 import { useFavorites, useReviews } from "@/hooks/use-local-library";
 import { Layout } from "@/components/layout";
 import { CoverImage } from "@/components/cover-image";
@@ -22,7 +23,8 @@ export default function BookDetail() {
   const authorKey = book?.authors?.[0]?.author?.key;
   const { data: authorName } = useAuthorName(authorKey);
 
-  const { data: gutenberg } = useGutenbergMatch(book?.title, authorName ?? undefined);
+  const { data: gutenberg, isLoading: isGutenbergLoading } = useGutenbergMatch(book?.title, authorName ?? undefined);
+  const { data: googleCover } = useGoogleBooksCover(book?.title, authorName ?? undefined);
 
   const [reviewText, setReviewText] = useState("");
   const [reviewStars, setReviewStars] = useState(0);
@@ -67,7 +69,9 @@ export default function BookDetail() {
     );
   }
 
-  const coverUrl = getCoverUrl(book.covers?.[0], "L");
+  const olCover = getCoverUrl(book.covers?.[0], "L");
+  const coverFallbacks = [gutenberg?.coverUrl, googleCover ?? undefined];
+  const coverUrl = olCover ?? coverFallbacks.find(Boolean);
   const isFav = isFavorite(safeWorkId);
   const description = cleanDescription(book.description);
   const hasGoodDescription = isMeaningfulDescription(description);
@@ -79,22 +83,31 @@ export default function BookDetail() {
           <div className="w-full max-w-sm mx-auto md:w-1/3 shrink-0">
             <div className="sticky top-24">
               <div className="rounded-lg shadow-2xl overflow-hidden mb-6 border border-border/40">
-                <CoverImage src={coverUrl} alt={book.title} className="w-full" />
+                <CoverImage src={olCover} fallbacks={coverFallbacks} alt={book.title} className="w-full" />
               </div>
 
               <div className="flex flex-col gap-3">
-                {gutenberg && (
+                {isGutenbergLoading ? (
+                  <div className="flex items-center justify-center gap-2 w-full h-12 bg-primary/30 text-primary-foreground/70 font-medium rounded-md shadow-md">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Looking up edition…
+                  </div>
+                ) : gutenberg ? (
                   <Link
-                    href={`/read/${safeWorkId}?epub=${encodeURIComponent(gutenberg.formats["application/epub+zip"])}`}
+                    href={`/read/${safeWorkId}?epub=${encodeURIComponent(gutenberg.epubUrl)}`}
                     className="flex items-center justify-center gap-2 w-full h-12 bg-primary text-primary-foreground font-medium rounded-md hover:bg-primary/90 transition-colors shadow-md"
                   >
                     <BookOpen className="w-5 h-5" />
                     Read Now
                   </Link>
+                ) : (
+                  <div className="flex items-center justify-center gap-2 w-full h-12 bg-muted/60 text-muted-foreground font-medium rounded-md text-sm border border-dashed border-border">
+                    Not available to read
+                  </div>
                 )}
 
                 <button
-                  onClick={() => toggleFavorite({ workId: safeWorkId, title: book.title, author: authorName ?? undefined, coverUrl })}
+                  onClick={() => toggleFavorite({ workId: safeWorkId, title: book.title, author: authorName ?? undefined, coverUrl: coverUrl ?? undefined })}
                   className="flex items-center justify-center gap-2 w-full h-12 border-2 border-primary/20 text-primary font-medium rounded-md hover:bg-primary/5 transition-colors"
                 >
                   {isFav ? <BookmarkMinus className="w-5 h-5" /> : <BookmarkPlus className="w-5 h-5" />}

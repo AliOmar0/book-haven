@@ -26,6 +26,10 @@ A cozy, mobile-first web app for discovering and reading classic books, with a 3
 - `artifacts/book-haven/src/components/hero-3d.tsx` — Three.js floating book stack (lazy + WebGL error boundary)
 - `artifacts/book-haven/src/hooks/use-local-library.ts` — wraps generated favorites/reviews hooks
 - `artifacts/book-haven/src/lib/clean-description.ts` — strips Open Library markdown/footnote noise
+- `artifacts/book-haven/src/hooks/use-gutenberg.ts` — Gutendex matcher (English-first, ASCII-author-only, scored)
+- `artifacts/book-haven/src/hooks/use-google-books.ts` — Google Books cover fallback
+- `artifacts/book-haven/src/hooks/use-epub-data.ts` — TanStack Query EPUB ArrayBuffer cache
+- `artifacts/api-server/src/routes/proxy.ts` — same-origin EPUB proxy (`/api/proxy/epub?url=…`, allowlists gutenberg.org)
 - `artifacts/book-haven/src/index.css` — warm parchment theme tokens, Cormorant/Inter fonts
 - `lib/db/src/schema/{favorites,reviews}.ts` — DB schema (deviceId + workId composite uniqueness on favorites)
 - `lib/api-spec/openapi.yaml` — contract for `/api/favorites` and `/api/reviews`
@@ -35,7 +39,9 @@ A cozy, mobile-first web app for discovering and reading classic books, with a 3
 
 - **Per-device identity, no login.** A first-party `bh_device` httpOnly cookie (UUID) issued by `device-id` middleware scopes favorites and reviews. Cross-origin won't work; relies on the workspace reverse-proxy keeping the API same-origin.
 - **Books/covers/ratings stay live from APIs.** Open Library for metadata + community ratings; Project Gutenberg via Gutendex for EPUBs. Only user-generated favorites/reviews live in Postgres.
-- **CORS proxy for EPUBs.** Project Gutenberg blocks browser CORS, so EPUB downloads route through `https://corsproxy.io/?url=<encoded>` before reaching epubjs.
+- **First-party EPUB proxy.** Project Gutenberg blocks browser CORS, so EPUB downloads route through our own `/api/proxy/epub?url=…` route (allowlists `www.gutenberg.org`). Public CORS proxies (corsproxy.io) are kept only as last-ditch fallback. The proxy streams the body through and caches in TanStack Query (`gcTime: 1h`, `staleTime: Infinity`) as an ArrayBuffer — page turns never refetch.
+- **English-edition preference.** `useGutenbergMatch` queries Gutendex with `&languages=en` first, skips author when it contains non-ASCII (since OL stores native-script names like Достоевский but Gutendex stores transliterations like "Dostoyevsky"), and scores candidates by title/author similarity + English bonus + EPUB presence + downloads.
+- **Cover fallback chain.** `<CoverImage src fallbacks={[…]} />` walks Open Library → Gutendex `image/jpeg` → Google Books `imageLinks` on each `onError`.
 - **3D hero is progressive enhancement.** `hero-3d.tsx` is `React.lazy` and wrapped in a WebGL detection check + error boundary; environments without WebGL get a warm gradient fallback.
 - **EPUB reader mounts once per book.** Theme/font-size apply via `rendition.themes.*` without remount. Page flip is a decorative Framer Motion overlay — actual paging is `rendition.next/prev`. EPUB rendition runs with `allowScriptedContent: false` since EPUBs are untrusted third-party content.
 - **Reviews are public ("Reader's Notes" community wall).** Favorites are per-device (scoped by `bh_device` cookie). Reviews are intentionally readable by all visitors — only the act of posting is device-tied. If this should ever change, scope `GET /reviews/:workId` by `req.deviceId` and remove the public listing.

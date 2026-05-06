@@ -14,3 +14,95 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * @summary List favorites for the current device
+ */
+export const ListFavoritesResponseItem = zod.object({
+  id: zod.number(),
+  workId: zod.string(),
+  title: zod.string(),
+  author: zod.string().nullish(),
+  coverUrl: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+});
+export const ListFavoritesResponse = zod.array(ListFavoritesResponseItem);
+
+/**
+ * @summary Add a favorite
+ */
+export const AddFavoriteBody = zod.object({
+  workId: zod.string(),
+  title: zod.string(),
+  author: zod.string().nullish(),
+  coverUrl: zod.string().nullish(),
+});
+
+export const AddFavoriteResponse = zod.object({
+  id: zod.number(),
+  workId: zod.string(),
+  title: zod.string(),
+  author: zod.string().nullish(),
+  coverUrl: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Remove a favorite by work id
+ */
+export const RemoveFavoriteParams = zod.object({
+  workId: zod.coerce.string(),
+});
+
+export const RemoveFavoriteResponse = zod.object({
+  ok: zod.boolean(),
+});
+
+/**
+ * @summary List reviews for a book
+ */
+export const ListReviewsParams = zod.object({
+  workId: zod.coerce.string(),
+});
+
+export const listReviewsResponseStarsMax = 5;
+
+export const ListReviewsResponseItem = zod.object({
+  id: zod.number(),
+  workId: zod.string(),
+  stars: zod.number().min(1).max(listReviewsResponseStarsMax),
+  name: zod.string(),
+  text: zod.string(),
+  createdAt: zod.coerce.date(),
+});
+export const ListReviewsResponse = zod.array(ListReviewsResponseItem);
+
+/**
+ * @summary Add a review for a book
+ */
+export const AddReviewParams = zod.object({
+  workId: zod.coerce.string(),
+});
+
+export const addReviewBodyStarsMax = 5;
+
+export const addReviewBodyNameMax = 80;
+
+export const addReviewBodyTextMax = 4000;
+
+export const AddReviewBody = zod.object({
+  stars: zod.number().min(1).max(addReviewBodyStarsMax),
+  name: zod.string().min(1).max(addReviewBodyNameMax),
+  text: zod.string().min(1).max(addReviewBodyTextMax),
+});
+
+export const addReviewResponseStarsMax = 5;
+
+export const AddReviewResponse = zod.object({
+  id: zod.number(),
+  workId: zod.string(),
+  stars: zod.number().min(1).max(addReviewResponseStarsMax),
+  name: zod.string(),
+  text: zod.string(),
+  createdAt: zod.coerce.date(),
+});

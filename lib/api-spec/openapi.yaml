@@ -10,6 +10,10 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: favorites
+    description: User favorite books
+  - name: reviews
+    description: User reviews on books
 paths:
   /healthz:
     get:
@@ -24,6 +28,98 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /favorites:
+    get:
+      operationId: listFavorites
+      tags: [favorites]
+      summary: List favorites for the current device
+      responses:
+        "200":
+          description: A list of favorites
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Favorite"
+    post:
+      operationId: addFavorite
+      tags: [favorites]
+      summary: Add a favorite
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FavoriteInput"
+      responses:
+        "200":
+          description: The created favorite
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Favorite"
+  /favorites/{workId}:
+    delete:
+      operationId: removeFavorite
+      tags: [favorites]
+      summary: Remove a favorite by work id
+      parameters:
+        - in: path
+          name: workId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+  /reviews/{workId}:
+    get:
+      operationId: listReviews
+      tags: [reviews]
+      summary: List reviews for a book
+      parameters:
+        - in: path
+          name: workId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A list of reviews
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Review"
+    post:
+      operationId: addReview
+      tags: [reviews]
+      summary: Add a review for a book
+      parameters:
+        - in: path
+          name: workId
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReviewInput"
+      responses:
+        "200":
+          description: The created review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Review"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +129,89 @@ components:
           type: string
       required:
         - status
-
+    OkResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+      required:
+        - ok
+    Favorite:
+      type: object
+      properties:
+        id:
+          type: integer
+        workId:
+          type: string
+        title:
+          type: string
+        author:
+          type: ["string", "null"]
+        coverUrl:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - workId
+        - title
+        - createdAt
+    FavoriteInput:
+      type: object
+      properties:
+        workId:
+          type: string
+        title:
+          type: string
+        author:
+          type: ["string", "null"]
+        coverUrl:
+          type: ["string", "null"]
+      required:
+        - workId
+        - title
+    Review:
+      type: object
+      properties:
+        id:
+          type: integer
+        workId:
+          type: string
+        stars:
+          type: integer
+          minimum: 1
+          maximum: 5
+        name:
+          type: string
+        text:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - workId
+        - stars
+        - name
+        - text
+        - createdAt
+    ReviewInput:
+      type: object
+      properties:
+        stars:
+          type: integer
+          minimum: 1
+          maximum: 5
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        text:
+          type: string
+          minLength: 1
+          maxLength: 4000
+      required:
+        - stars
+        - name
+        - text

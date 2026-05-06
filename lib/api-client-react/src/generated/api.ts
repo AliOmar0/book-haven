@@ -5,18 +5,28 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HealthStatus } from "./api.schemas";
+import type {
+  Favorite,
+  FavoriteInput,
+  HealthStatus,
+  OkResponse,
+  Review,
+  ReviewInput,
+} from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -99,3 +109,422 @@ export function useHealthCheck<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary List favorites for the current device
+ */
+export const getListFavoritesUrl = () => {
+  return `/api/favorites`;
+};
+
+export const listFavorites = async (
+  options?: RequestInit,
+): Promise<Favorite[]> => {
+  return customFetch<Favorite[]>(getListFavoritesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListFavoritesQueryKey = () => {
+  return [`/api/favorites`] as const;
+};
+
+export const getListFavoritesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listFavorites>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listFavorites>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListFavoritesQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listFavorites>>> = ({
+    signal,
+  }) => listFavorites({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listFavorites>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListFavoritesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listFavorites>>
+>;
+export type ListFavoritesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List favorites for the current device
+ */
+
+export function useListFavorites<
+  TData = Awaited<ReturnType<typeof listFavorites>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listFavorites>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListFavoritesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Add a favorite
+ */
+export const getAddFavoriteUrl = () => {
+  return `/api/favorites`;
+};
+
+export const addFavorite = async (
+  favoriteInput: FavoriteInput,
+  options?: RequestInit,
+): Promise<Favorite> => {
+  return customFetch<Favorite>(getAddFavoriteUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(favoriteInput),
+  });
+};
+
+export const getAddFavoriteMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addFavorite>>,
+    TError,
+    { data: BodyType<FavoriteInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addFavorite>>,
+  TError,
+  { data: BodyType<FavoriteInput> },
+  TContext
+> => {
+  const mutationKey = ["addFavorite"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addFavorite>>,
+    { data: BodyType<FavoriteInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return addFavorite(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddFavoriteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addFavorite>>
+>;
+export type AddFavoriteMutationBody = BodyType<FavoriteInput>;
+export type AddFavoriteMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Add a favorite
+ */
+export const useAddFavorite = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addFavorite>>,
+    TError,
+    { data: BodyType<FavoriteInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof addFavorite>>,
+  TError,
+  { data: BodyType<FavoriteInput> },
+  TContext
+> => {
+  return useMutation(getAddFavoriteMutationOptions(options));
+};
+
+/**
+ * @summary Remove a favorite by work id
+ */
+export const getRemoveFavoriteUrl = (workId: string) => {
+  return `/api/favorites/${workId}`;
+};
+
+export const removeFavorite = async (
+  workId: string,
+  options?: RequestInit,
+): Promise<OkResponse> => {
+  return customFetch<OkResponse>(getRemoveFavoriteUrl(workId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getRemoveFavoriteMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeFavorite>>,
+    TError,
+    { workId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof removeFavorite>>,
+  TError,
+  { workId: string },
+  TContext
+> => {
+  const mutationKey = ["removeFavorite"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof removeFavorite>>,
+    { workId: string }
+  > = (props) => {
+    const { workId } = props ?? {};
+
+    return removeFavorite(workId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoveFavoriteMutationResult = NonNullable<
+  Awaited<ReturnType<typeof removeFavorite>>
+>;
+
+export type RemoveFavoriteMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Remove a favorite by work id
+ */
+export const useRemoveFavorite = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeFavorite>>,
+    TError,
+    { workId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof removeFavorite>>,
+  TError,
+  { workId: string },
+  TContext
+> => {
+  return useMutation(getRemoveFavoriteMutationOptions(options));
+};
+
+/**
+ * @summary List reviews for a book
+ */
+export const getListReviewsUrl = (workId: string) => {
+  return `/api/reviews/${workId}`;
+};
+
+export const listReviews = async (
+  workId: string,
+  options?: RequestInit,
+): Promise<Review[]> => {
+  return customFetch<Review[]>(getListReviewsUrl(workId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListReviewsQueryKey = (workId: string) => {
+  return [`/api/reviews/${workId}`] as const;
+};
+
+export const getListReviewsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listReviews>>,
+  TError = ErrorType<unknown>,
+>(
+  workId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listReviews>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListReviewsQueryKey(workId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listReviews>>> = ({
+    signal,
+  }) => listReviews(workId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!workId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listReviews>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListReviewsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listReviews>>
+>;
+export type ListReviewsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List reviews for a book
+ */
+
+export function useListReviews<
+  TData = Awaited<ReturnType<typeof listReviews>>,
+  TError = ErrorType<unknown>,
+>(
+  workId: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listReviews>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListReviewsQueryOptions(workId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Add a review for a book
+ */
+export const getAddReviewUrl = (workId: string) => {
+  return `/api/reviews/${workId}`;
+};
+
+export const addReview = async (
+  workId: string,
+  reviewInput: ReviewInput,
+  options?: RequestInit,
+): Promise<Review> => {
+  return customFetch<Review>(getAddReviewUrl(workId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(reviewInput),
+  });
+};
+
+export const getAddReviewMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addReview>>,
+    TError,
+    { workId: string; data: BodyType<ReviewInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addReview>>,
+  TError,
+  { workId: string; data: BodyType<ReviewInput> },
+  TContext
+> => {
+  const mutationKey = ["addReview"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addReview>>,
+    { workId: string; data: BodyType<ReviewInput> }
+  > = (props) => {
+    const { workId, data } = props ?? {};
+
+    return addReview(workId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddReviewMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addReview>>
+>;
+export type AddReviewMutationBody = BodyType<ReviewInput>;
+export type AddReviewMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Add a review for a book
+ */
+export const useAddReview = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addReview>>,
+    TError,
+    { workId: string; data: BodyType<ReviewInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof addReview>>,
+  TError,
+  { workId: string; data: BodyType<ReviewInput> },
+  TContext
+> => {
+  return useMutation(getAddReviewMutationOptions(options));
+};

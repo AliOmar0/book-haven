@@ -60,14 +60,14 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  --background: 40 40% 98%; /* Parchment #fdfbf7 */
-  --foreground: 0 0% 10%; /* Ink black #1a1a1a */
+  --background: 38 45% 92%; /* Warmer cream/oat */
+  --foreground: 0 0% 10%; /* Ink black */
   
-  --border: 40 20% 85%; /* Darker parchment */
+  --border: 40 25% 82%;
   
-  --card: 40 45% 96%; /* Slightly darker than bg */
+  --card: 38 40% 95%; /* Subtly lighter than bg */
   --card-foreground: 0 0% 10%;
-  --card-border: 40 20% 85%;
+  --card-border: 40 25% 82%;
   
   --sidebar: 40 40% 98%;
   --sidebar-foreground: 0 0% 10%;

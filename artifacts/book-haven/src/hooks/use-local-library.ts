@@ -1,12 +1,17 @@
-import { useState, useEffect } from "react";
+import {
+  useListFavorites,
+  useAddFavorite,
+  useRemoveFavorite,
+  useListReviews,
+  useAddReview,
+  getListFavoritesQueryKey,
+  getListReviewsQueryKey,
+  type Favorite,
+  type Review,
+} from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 
-export interface Review {
-  id: string;
-  stars: number;
-  name: string;
-  text: string;
-  createdAt: number;
-}
+export type { Favorite, Review };
 
 export interface FavoriteBook {
   workId: string;
@@ -15,67 +20,58 @@ export interface FavoriteBook {
   coverUrl?: string;
 }
 
-export function useReviews(workId: string) {
-  const key = `book-haven:reviews:${workId}`;
-  
-  const [reviews, setReviews] = useState<Review[]>([]);
-
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(key);
-      if (stored) {
-        setReviews(JSON.parse(stored));
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }, [key]);
-
-  const addReview = (review: Omit<Review, "id" | "createdAt">) => {
-    const newReview: Review = {
-      ...review,
-      id: crypto.randomUUID(),
-      createdAt: Date.now(),
-    };
-    const updated = [newReview, ...reviews];
-    setReviews(updated);
-    localStorage.setItem(key, JSON.stringify(updated));
-  };
-
-  return { reviews, addReview };
-}
-
 export function useFavorites() {
-  const key = `book-haven:favorites`;
-  
-  const [favorites, setFavorites] = useState<FavoriteBook[]>([]);
+  const qc = useQueryClient();
+  const { data: favorites = [], isLoading } = useListFavorites();
+  const add = useAddFavorite({
+    mutation: {
+      onSuccess: () =>
+        qc.invalidateQueries({ queryKey: getListFavoritesQueryKey() }),
+    },
+  });
+  const remove = useRemoveFavorite({
+    mutation: {
+      onSuccess: () =>
+        qc.invalidateQueries({ queryKey: getListFavoritesQueryKey() }),
+    },
+  });
 
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(key);
-      if (stored) {
-        setFavorites(JSON.parse(stored));
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }, [key]);
+  const isFavorite = (workId: string) =>
+    favorites.some((f) => f.workId === workId);
 
   const toggleFavorite = (book: FavoriteBook) => {
-    let updated: FavoriteBook[];
-    const isFav = favorites.some(f => f.workId === book.workId);
-    
-    if (isFav) {
-      updated = favorites.filter(f => f.workId !== book.workId);
+    if (isFavorite(book.workId)) {
+      remove.mutate({ workId: book.workId });
     } else {
-      updated = [...favorites, book];
+      add.mutate({
+        data: {
+          workId: book.workId,
+          title: book.title,
+          author: book.author ?? null,
+          coverUrl: book.coverUrl ?? null,
+        },
+      });
     }
-    
-    setFavorites(updated);
-    localStorage.setItem(key, JSON.stringify(updated));
   };
 
-  const isFavorite = (workId: string) => favorites.some(f => f.workId === workId);
+  return { favorites, isFavorite, toggleFavorite, isLoading };
+}
 
-  return { favorites, toggleFavorite, isFavorite };
+export function useReviews(workId: string) {
+  const qc = useQueryClient();
+  const { data: reviews = [], isLoading } = useListReviews(workId, {
+    query: { enabled: !!workId } as never,
+  });
+  const add = useAddReview({
+    mutation: {
+      onSuccess: () =>
+        qc.invalidateQueries({ queryKey: getListReviewsQueryKey(workId) }),
+    },
+  });
+
+  const addReview = (review: { stars: number; name: string; text: string }) => {
+    add.mutate({ workId, data: review });
+  };
+
+  return { reviews, addReview, isLoading, isAdding: add.isPending };
 }

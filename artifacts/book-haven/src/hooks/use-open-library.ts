@@ -6,6 +6,7 @@ export interface OLWork {
   key: string;
   title: string;
   author_name?: string[];
+  author_key?: string[];
   cover_i?: number;
   first_publish_year?: number;
   subject?: string[];
@@ -38,21 +39,32 @@ export interface OLSubjectResponse {
   }[];
 }
 
-export function useSearchBooks(query: string) {
+export interface SearchOptions {
+  subject?: string;
+  language?: string;
+  ebookOnly?: boolean;
+}
+
+export function useSearchBooks(query: string, opts: SearchOptions = {}) {
   return useQuery({
-    queryKey: ["ol-search", query],
+    queryKey: ["ol-search", query, opts],
     queryFn: async () => {
       if (!query) return { docs: [] };
-      const res = await fetch(
-        `${OL_BASE_URL}/search.json?q=${encodeURIComponent(
-          query
-        )}&limit=24&fields=key,title,author_name,cover_i,first_publish_year,subject,ia,ebook_access,language,ratings_average,ratings_count`
+      const parts: string[] = [`q=${encodeURIComponent(query)}`];
+      if (opts.subject) parts.push(`subject=${encodeURIComponent(opts.subject)}`);
+      if (opts.language) parts.push(`language=${encodeURIComponent(opts.language)}`);
+      if (opts.ebookOnly) parts.push(`has_fulltext=true`);
+      parts.push("limit=24");
+      parts.push(
+        "fields=key,title,author_name,author_key,cover_i,first_publish_year,subject,ia,ebook_access,language,ratings_average,ratings_count",
       );
+      const res = await fetch(`${OL_BASE_URL}/search.json?${parts.join("&")}`);
       if (!res.ok) throw new Error("Network response was not ok");
       const data = await res.json();
       return data as { docs: OLWork[] };
     },
     enabled: !!query,
+    staleTime: 1000 * 60 * 5,
   });
 }
 
@@ -65,6 +77,7 @@ export function useSubjectBooks(subject: string) {
       const data = await res.json();
       return data as OLSubjectResponse;
     },
+    staleTime: 1000 * 60 * 30,
   });
 }
 
@@ -97,7 +110,22 @@ export function useBookRatings(workId: string) {
   });
 }
 
-// Format the image url
+export function useAuthorName(authorKey?: string) {
+  return useQuery({
+    queryKey: ["ol-author", authorKey],
+    queryFn: async () => {
+      if (!authorKey) return null;
+      const key = authorKey.startsWith("/authors/") ? authorKey : `/authors/${authorKey}`;
+      const res = await fetch(`${OL_BASE_URL}${key}.json`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      return (data?.name as string) || null;
+    },
+    enabled: !!authorKey,
+    staleTime: 1000 * 60 * 60,
+  });
+}
+
 export function getCoverUrl(coverId?: number, size: "S" | "M" | "L" = "M") {
   if (!coverId) return undefined;
   return `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg`;

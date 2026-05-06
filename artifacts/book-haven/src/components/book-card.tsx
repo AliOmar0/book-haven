@@ -8,12 +8,12 @@ interface BookCardProps {
   title: string;
   author?: string;
   coverId?: number;
+  coverUrl?: string;
   delay?: number;
 }
 
-export function BookCard({ workId, title, author, coverId, delay = 0 }: BookCardProps) {
-  const coverUrl = getCoverUrl(coverId, "M");
-  // Clean workId if it has /works/ prefix
+export function BookCard({ workId, title, author, coverId, coverUrl, delay = 0 }: BookCardProps) {
+  const resolvedCover = coverUrl ?? getCoverUrl(coverId, "M");
   const id = workId.replace("/works/", "");
 
   return (
@@ -26,7 +26,7 @@ export function BookCard({ workId, title, author, coverId, delay = 0 }: BookCard
     >
       <Link href={`/book/${id}`} className="block space-y-3">
         <div className="relative overflow-hidden rounded-md shadow-md transition-all duration-300 group-hover:shadow-xl group-hover:-translate-y-1">
-          <CoverImage src={coverUrl} alt={title} className="w-full" />
+          <CoverImage src={resolvedCover} alt={title} className="w-full" />
           <div className="absolute inset-0 bg-black/0 transition-colors duration-300 group-hover:bg-black/10" />
         </div>
         <div className="space-y-1">

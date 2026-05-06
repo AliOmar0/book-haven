@@ -6,4 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from "./favorite";
+export * from "./favoriteInput";
 export * from "./healthStatus";
+export * from "./okResponse";
+export * from "./review";
+export * from "./reviewInput";

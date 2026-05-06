@@ -8,3 +8,58 @@
 export interface HealthStatus {
   status: string;
 }
+
+export interface OkResponse {
+  ok: boolean;
+}
+
+export interface Favorite {
+  id: number;
+  workId: string;
+  title: string;
+  /** @nullable */
+  author?: string | null;
+  /** @nullable */
+  coverUrl?: string | null;
+  createdAt: string;
+}
+
+export interface FavoriteInput {
+  workId: string;
+  title: string;
+  /** @nullable */
+  author?: string | null;
+  /** @nullable */
+  coverUrl?: string | null;
+}
+
+export interface Review {
+  id: number;
+  workId: string;
+  /**
+   * @minimum 1
+   * @maximum 5
+   */
+  stars: number;
+  name: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface ReviewInput {
+  /**
+   * @minimum 1
+   * @maximum 5
+   */
+  stars: number;
+  /**
+   * @minLength 1
+   * @maxLength 80
+   */
+  name: string;
+  /**
+   * @minLength 1
+   * @maxLength 4000
+   */
+  text: string;
+}

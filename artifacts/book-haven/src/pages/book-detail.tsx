@@ -1,25 +1,28 @@
 import { useParams, Link } from "wouter";
-import { useBookDetail, useBookRatings, getCoverUrl } from "@/hooks/use-open-library";
+import { useBookDetail, useBookRatings, getCoverUrl, useAuthorName } from "@/hooks/use-open-library";
 import { useGutenbergMatch } from "@/hooks/use-gutenberg";
 import { useFavorites, useReviews } from "@/hooks/use-local-library";
 import { Layout } from "@/components/layout";
 import { CoverImage } from "@/components/cover-image";
 import { StarRating } from "@/components/star-rating";
-import { BookmarkPlus, BookmarkMinus, BookOpen, MessageSquareQuote, Calendar } from "lucide-react";
+import { BookmarkPlus, BookmarkMinus, BookOpen, MessageSquareQuote, Calendar, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { format } from "date-fns";
+import { cleanDescription, isMeaningfulDescription } from "@/lib/clean-description";
 
 export default function BookDetail() {
   const { workId } = useParams();
   const safeWorkId = workId || "";
-  
+
   const { data: book, isLoading, error } = useBookDetail(safeWorkId);
   const { data: ratings } = useBookRatings(safeWorkId);
   const { isFavorite, toggleFavorite } = useFavorites();
-  const { reviews, addReview } = useReviews(safeWorkId);
-  
-  // Try to find readable version
-  const { data: gutenberg } = useGutenbergMatch(book?.title, book?.authors?.[0]?.author?.key); // ideally we'd resolve author name
+  const { reviews, addReview, isAdding } = useReviews(safeWorkId);
+
+  const authorKey = book?.authors?.[0]?.author?.key;
+  const { data: authorName } = useAuthorName(authorKey);
+
+  const { data: gutenberg } = useGutenbergMatch(book?.title, authorName ?? undefined);
 
   const [reviewText, setReviewText] = useState("");
   const [reviewStars, setReviewStars] = useState(0);
@@ -28,7 +31,7 @@ export default function BookDetail() {
   const handleReviewSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!reviewText || !reviewStars) return;
-    addReview({ name: reviewName || "Anonymous Reader", stars: reviewStars, text: reviewText });
+    addReview({ name: reviewName.trim() || "Anonymous Reader", stars: reviewStars, text: reviewText.trim() });
     setReviewText("");
     setReviewStars(0);
     setReviewName("");
@@ -66,20 +69,19 @@ export default function BookDetail() {
 
   const coverUrl = getCoverUrl(book.covers?.[0], "L");
   const isFav = isFavorite(safeWorkId);
-  const authorName = "Author Info Available in Search Docs"; // Simplification since detailed author needs another API call in OpenLibrary
-  const description = typeof book.description === "object" ? book.description.value : book.description;
+  const description = cleanDescription(book.description);
+  const hasGoodDescription = isMeaningfulDescription(description);
 
   return (
     <Layout>
-      <div className="bg-muted/30 border-b border-border/50">
+      <div className="bg-gradient-to-b from-primary/8 via-card to-background border-b border-border/50">
         <div className="max-w-6xl mx-auto px-6 py-12 md:py-20 flex flex-col md:flex-row gap-10 lg:gap-16">
-          {/* Cover Column */}
           <div className="w-full max-w-sm mx-auto md:w-1/3 shrink-0">
             <div className="sticky top-24">
               <div className="rounded-lg shadow-2xl overflow-hidden mb-6 border border-border/40">
                 <CoverImage src={coverUrl} alt={book.title} className="w-full" />
               </div>
-              
+
               <div className="flex flex-col gap-3">
                 {gutenberg && (
                   <Link
@@ -90,9 +92,9 @@ export default function BookDetail() {
                     Read Now
                   </Link>
                 )}
-                
+
                 <button
-                  onClick={() => toggleFavorite({ workId: safeWorkId, title: book.title, coverUrl })}
+                  onClick={() => toggleFavorite({ workId: safeWorkId, title: book.title, author: authorName ?? undefined, coverUrl })}
                   className="flex items-center justify-center gap-2 w-full h-12 border-2 border-primary/20 text-primary font-medium rounded-md hover:bg-primary/5 transition-colors"
                 >
                   {isFav ? <BookmarkMinus className="w-5 h-5" /> : <BookmarkPlus className="w-5 h-5" />}
@@ -102,36 +104,43 @@ export default function BookDetail() {
             </div>
           </div>
 
-          {/* Details Column */}
           <div className="flex-1 space-y-8">
             <div>
               <h1 className="font-serif text-4xl md:text-5xl lg:text-6xl font-bold leading-tight text-foreground mb-3">
                 {book.title}
               </h1>
-              {/* Author would go here if fetched properly */}
-              
-              {ratings && (
+              {authorName && (
+                <p className="text-lg text-muted-foreground italic font-serif">by {authorName}</p>
+              )}
+
+              {ratings && ratings.summary.count > 0 && (
                 <div className="flex items-center gap-4 mt-6 p-4 bg-card rounded-md border border-border shadow-sm inline-flex">
                   <div className="flex flex-col">
                     <span className="text-sm text-muted-foreground uppercase tracking-wider font-semibold mb-1">Community Rating</span>
                     <div className="flex items-center gap-3">
                       <StarRating value={ratings.summary.average || 0} readOnly />
                       <span className="font-medium text-lg">{ratings.summary.average?.toFixed(1) || "N/A"}</span>
-                      <span className="text-muted-foreground text-sm">({ratings.summary.count || 0} votes)</span>
+                      <span className="text-muted-foreground text-sm">({ratings.summary.count.toLocaleString()} ratings)</span>
                     </div>
                   </div>
                 </div>
               )}
             </div>
 
-            {description && (
-              <div className="prose prose-stone dark:prose-invert max-w-none">
-                <h3 className="font-serif text-2xl font-semibold mb-4">Synopsis</h3>
-                <div className="whitespace-pre-wrap text-lg leading-relaxed text-foreground/80 font-serif">
-                  {description}
+            <div className="prose prose-stone dark:prose-invert max-w-none">
+              <h3 className="font-serif text-2xl font-semibold mb-4">Synopsis</h3>
+              {hasGoodDescription ? (
+                <div className="space-y-4 text-lg leading-relaxed text-foreground/85 font-serif">
+                  {description.split(/\n{2,}/).map((para, i) => (
+                    <p key={i}>{para}</p>
+                  ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <p className="text-base text-muted-foreground italic font-serif">
+                  No detailed synopsis is available for this volume. The story unfolds within its pages.
+                </p>
+              )}
+            </div>
 
             {book.subjects && book.subjects.length > 0 && (
               <div>
@@ -149,7 +158,6 @@ export default function BookDetail() {
         </div>
       </div>
 
-      {/* Reviews Section */}
       <div className="max-w-4xl mx-auto px-6 py-16">
         <div className="flex items-center gap-3 mb-10">
           <MessageSquareQuote className="w-8 h-8 text-primary" />
@@ -187,9 +195,10 @@ export default function BookDetail() {
             </div>
             <button
               type="submit"
-              disabled={!reviewText || !reviewStars}
-              className="px-6 py-2 bg-primary text-primary-foreground font-medium rounded-md hover:bg-primary/90 disabled:opacity-50"
+              disabled={!reviewText || !reviewStars || isAdding}
+              className="px-6 py-2 bg-primary text-primary-foreground font-medium rounded-md hover:bg-primary/90 disabled:opacity-50 inline-flex items-center gap-2"
             >
+              {isAdding && <Loader2 className="w-4 h-4 animate-spin" />}
               Record Notes
             </button>
           </form>
@@ -208,7 +217,7 @@ export default function BookDetail() {
                     <h4 className="font-semibold">{review.name}</h4>
                     <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
                       <Calendar className="w-3.5 h-3.5" />
-                      {format(review.createdAt, "MMM d, yyyy")}
+                      {format(new Date(review.createdAt), "MMM d, yyyy")}
                     </div>
                   </div>
                   <StarRating value={review.stars} readOnly />

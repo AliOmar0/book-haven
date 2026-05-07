@@ -2,15 +2,16 @@ import { useParams, Link } from "wouter";
 import { useBookDetail, useBookRatings, getCoverUrl, useAuthorName } from "@/hooks/use-open-library";
 import { useGutenbergMatch } from "@/hooks/use-gutenberg";
 import { useGoogleBooksCover } from "@/hooks/use-google-books";
-import { usePrefetchEpub } from "@/hooks/use-epub-data";
+import { usePrefetchBookFile } from "@/hooks/use-epub-data";
+import { useEnhancedDescription } from "@/hooks/use-enhanced-description";
 import { useFavorites, useReviews } from "@/hooks/use-local-library";
 import { Layout } from "@/components/layout";
 import { CoverImage } from "@/components/cover-image";
 import { StarRating } from "@/components/star-rating";
-import { BookmarkPlus, BookmarkMinus, BookOpen, MessageSquareQuote, Calendar, Loader2 } from "lucide-react";
+import { BookmarkPlus, BookmarkMinus, BookOpen, FileText, MessageSquareQuote, Calendar, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { format } from "date-fns";
-import { cleanDescription, isMeaningfulDescription } from "@/lib/clean-description";
+import { cn } from "@/lib/utils";
 
 export default function BookDetail() {
   const { workId } = useParams();
@@ -26,7 +27,8 @@ export default function BookDetail() {
 
   const { data: gutenberg, isLoading: isGutenbergLoading } = useGutenbergMatch(book?.title, authorName ?? undefined);
   const { data: googleCover } = useGoogleBooksCover(book?.title, authorName ?? undefined);
-  const prefetchEpub = usePrefetchEpub();
+  const prefetch = usePrefetchBookFile();
+  const synopsis = useEnhancedDescription(book?.title, authorName ?? undefined, book?.description);
 
   const [reviewText, setReviewText] = useState("");
   const [reviewStars, setReviewStars] = useState(0);
@@ -75,8 +77,11 @@ export default function BookDetail() {
   const coverFallbacks = [gutenberg?.coverUrl, googleCover ?? undefined];
   const coverUrl = olCover ?? coverFallbacks.find(Boolean);
   const isFav = isFavorite(safeWorkId);
-  const description = cleanDescription(book.description);
-  const hasGoodDescription = isMeaningfulDescription(description);
+  const description = synopsis.text;
+  const hasGoodDescription = description.length >= 80;
+  const sourceLabel =
+    synopsis.source === "google" ? "Google Books" :
+    synopsis.source === "openlibrary" ? "Open Library" : null;
 
   return (
     <Layout>
@@ -94,17 +99,38 @@ export default function BookDetail() {
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Looking up edition…
                   </div>
-                ) : gutenberg ? (
-                  <Link
-                    href={`/read/${safeWorkId}?epub=${encodeURIComponent(gutenberg.epubUrl)}`}
-                    onMouseEnter={() => prefetchEpub(gutenberg.epubUrl)}
-                    onFocus={() => prefetchEpub(gutenberg.epubUrl)}
-                    onTouchStart={() => prefetchEpub(gutenberg.epubUrl)}
-                    className="flex items-center justify-center gap-2 w-full h-12 bg-primary text-primary-foreground font-medium rounded-md hover:bg-primary/90 transition-colors shadow-md"
-                  >
-                    <BookOpen className="w-5 h-5" />
-                    Read Now
-                  </Link>
+                ) : gutenberg && (gutenberg.epubUrl || gutenberg.pdfUrl) ? (
+                  <div className="flex flex-col gap-2">
+                    {gutenberg.epubUrl && (
+                      <Link
+                        href={`/read/${safeWorkId}?epub=${encodeURIComponent(gutenberg.epubUrl)}`}
+                        onMouseEnter={() => prefetch(gutenberg.epubUrl)}
+                        onFocus={() => prefetch(gutenberg.epubUrl)}
+                        onTouchStart={() => prefetch(gutenberg.epubUrl)}
+                        className="flex items-center justify-center gap-2 w-full h-12 bg-primary text-primary-foreground font-medium rounded-md hover:bg-primary/90 transition-colors shadow-md"
+                      >
+                        <BookOpen className="w-5 h-5" />
+                        Read EPUB
+                      </Link>
+                    )}
+                    {gutenberg.pdfUrl && (
+                      <Link
+                        href={`/read-pdf/${safeWorkId}?pdf=${encodeURIComponent(gutenberg.pdfUrl)}`}
+                        onMouseEnter={() => prefetch(gutenberg.pdfUrl)}
+                        onFocus={() => prefetch(gutenberg.pdfUrl)}
+                        onTouchStart={() => prefetch(gutenberg.pdfUrl)}
+                        className={cn(
+                          "flex items-center justify-center gap-2 w-full h-12 font-medium rounded-md transition-colors",
+                          gutenberg.epubUrl
+                            ? "border-2 border-primary/30 text-primary hover:bg-primary/5"
+                            : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md",
+                        )}
+                      >
+                        <FileText className="w-5 h-5" />
+                        Read PDF
+                      </Link>
+                    )}
+                  </div>
                 ) : (
                   <div className="flex items-center justify-center gap-2 w-full h-12 bg-muted/60 text-muted-foreground font-medium rounded-md text-sm border border-dashed border-border">
                     Not available to read
@@ -146,8 +172,21 @@ export default function BookDetail() {
             </div>
 
             <div className="prose prose-stone dark:prose-invert max-w-none">
-              <h3 className="font-serif text-2xl font-semibold mb-4">Synopsis</h3>
-              {hasGoodDescription ? (
+              <div className="flex items-baseline justify-between gap-3 mb-4">
+                <h3 className="font-serif text-2xl font-semibold">Synopsis</h3>
+                {sourceLabel && hasGoodDescription && (
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                    via {sourceLabel}
+                  </span>
+                )}
+              </div>
+              {synopsis.loading && !hasGoodDescription ? (
+                <div className="space-y-3 animate-pulse">
+                  <div className="h-4 bg-muted/50 rounded w-full" />
+                  <div className="h-4 bg-muted/50 rounded w-11/12" />
+                  <div className="h-4 bg-muted/50 rounded w-4/5" />
+                </div>
+              ) : hasGoodDescription ? (
                 <div className="space-y-4 text-lg leading-relaxed text-foreground/85 font-serif">
                   {description.split(/\n{2,}/).map((para, i) => (
                     <p key={i}>{para}</p>

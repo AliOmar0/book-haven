@@ -9,6 +9,7 @@ import Search from "@/pages/search";
 import BookDetail from "@/pages/book-detail";
 import Library from "@/pages/library";
 import Read from "@/pages/read";
+import ReadPdf from "@/pages/read-pdf";
 
 const queryClient = new QueryClient();
 
@@ -20,6 +21,7 @@ function Router() {
       <Route path="/book/:workId" component={BookDetail} />
       <Route path="/library" component={Library} />
       <Route path="/read/:workId" component={Read} />
+      <Route path="/read-pdf/:workId" component={ReadPdf} />
       <Route component={NotFound} />
     </Switch>
   );

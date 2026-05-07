@@ -23,14 +23,16 @@ A cozy, mobile-first web app for discovering and reading classic books, with a 3
 ## Where things live
 
 - `artifacts/book-haven/src/pages/` — Home, Search, Book detail, Read (EPUB reader), Library
-- `artifacts/book-haven/src/components/hero-3d.tsx` — Three.js floating book stack (lazy + WebGL error boundary)
+- `artifacts/book-haven/src/components/hero-3d.tsx` — Three.js floating book stack with PBR leather covers, gold trim, dramatic 3-point lighting (lazy + WebGL error boundary)
 - `artifacts/book-haven/src/hooks/use-local-library.ts` — wraps generated favorites/reviews hooks
 - `artifacts/book-haven/src/lib/clean-description.ts` — strips Open Library markdown/footnote noise
-- `artifacts/book-haven/src/hooks/use-gutenberg.ts` — Gutendex matcher (English-first, ASCII-author-only, scored)
-- `artifacts/book-haven/src/hooks/use-google-books.ts` — Google Books cover fallback
-- `artifacts/book-haven/src/hooks/use-epub-data.ts` — TanStack Query EPUB ArrayBuffer cache (streaming progress + `usePrefetchEpub()`)
+- `artifacts/book-haven/src/hooks/use-gutenberg.ts` — Gutendex matcher (English-first, ASCII-author-only, scored, parallel queries, returns both `epubUrl` and `pdfUrl`)
+- `artifacts/book-haven/src/hooks/use-google-books.ts` — Google Books cover fallback + `useGoogleBookInfo` (description/publisher)
+- `artifacts/book-haven/src/hooks/use-enhanced-description.ts` — Picks the best synopsis: Google Books description first, Open Library cleaned text fallback
+- `artifacts/book-haven/src/hooks/use-epub-data.ts` — TanStack Query book-file ArrayBuffer cache (`useBookFile`/`usePrefetchBookFile` work for both EPUB and PDF; `useEpubData`/`usePrefetchEpub` retained as aliases)
 - `artifacts/book-haven/src/hooks/use-reader-state.ts` — per-workId localStorage state (lastCfi, bookmarks, highlights)
-- `artifacts/api-server/src/routes/proxy.ts` — same-origin EPUB proxy (`/api/proxy/epub?url=…`, allowlists gutenberg.org)
+- `artifacts/api-server/src/routes/proxy.ts` — same-origin file proxy (`/api/proxy/epub?url=…`, allowlists gutenberg.org). Despite the path name "epub", forwards the upstream Content-Type so it serves PDFs and any other Gutenberg file.
+- `artifacts/book-haven/src/pages/read-pdf.tsx` — PDF reader (react-pdf), mirrors the EPUB reader's chrome (themes, sidebar, toolbar, slide+sweep animation). Bookmarks keyed by page number; reader state namespaced as `<workId>:pdf` so it doesn't collide with EPUB CFIs.
 - `artifacts/book-haven/src/index.css` — warm parchment theme tokens, Cormorant/Inter fonts
 - `lib/db/src/schema/{favorites,reviews}.ts` — DB schema (deviceId + workId composite uniqueness on favorites)
 - `lib/api-spec/openapi.yaml` — contract for `/api/favorites` and `/api/reviews`
@@ -39,7 +41,10 @@ A cozy, mobile-first web app for discovering and reading classic books, with a 3
 ## Architecture decisions
 
 - **Per-device identity, no login.** A first-party `bh_device` httpOnly cookie (UUID) issued by `device-id` middleware scopes favorites and reviews. Cross-origin won't work; relies on the workspace reverse-proxy keeping the API same-origin.
-- **Books/covers/ratings stay live from APIs.** Open Library for metadata + community ratings; Project Gutenberg via Gutendex for EPUBs. Only user-generated favorites/reviews live in Postgres.
+- **Books/covers/ratings stay live from APIs.** Open Library for metadata + community ratings; Project Gutenberg via Gutendex for EPUBs **and PDFs** (both surfaced when available). Only user-generated favorites/reviews live in Postgres.
+- **Synopsis prefers a richer source.** `useEnhancedDescription` chains Google Books `volumeInfo.description` (publisher-grade blurbs) → cleaned Open Library description → empty. The source is shown as a tiny "via Google Books" / "via Open Library" tag next to the heading.
+- **Dual-format reading.** Book detail surfaces a "Read EPUB" + "Read PDF" stack when both formats exist (EPUB primary). Each button prefetches its file on hover/focus/touch via `usePrefetchBookFile`. EPUB → `/read/:workId?epub=…`, PDF → `/read-pdf/:workId?pdf=…`. The PDF reader uses `react-pdf` with `pdfjs-dist` pinned to the version `react-pdf` bundles internally to avoid worker/API version mismatches.
+- **Faster edition lookup.** The four Gutendex search variants run in parallel via `Promise.allSettled` (was sequential, ~24s worst case). Per-request timeout is 20s — wall-clock is bounded at 20s instead of summing.
 - **First-party EPUB proxy.** Project Gutenberg blocks browser CORS, so EPUB downloads route through our own `/api/proxy/epub?url=…` route (allowlists `www.gutenberg.org`). Public CORS proxies (corsproxy.io) are kept only as last-ditch fallback. The proxy streams the body through and caches in TanStack Query (`gcTime: 1h`, `staleTime: Infinity`) as an ArrayBuffer — page turns never refetch.
 - **English-edition preference.** `useGutenbergMatch` queries Gutendex with `&languages=en` first, skips author when it contains non-ASCII (since OL stores native-script names like Достоевский but Gutendex stores transliterations like "Dostoyevsky"), and scores candidates by title/author similarity + English bonus + EPUB presence + downloads.
 - **Cover fallback chain.** `<CoverImage src fallbacks={[…]} />` walks Open Library → Gutendex `image/jpeg` → Google Books `imageLinks` on each `onError`.
@@ -55,6 +60,7 @@ A cozy, mobile-first web app for discovering and reading classic books, with a 3
 - Search Open Library with subject/language/ebook-only filters and live debounce
 - Book detail with cover, cleaned synopsis, community rating, plus star reviews
 - In-app EPUB reader: sepia/light/dark themes, font-size, TOC sidebar with Contents/Bookmarks/Highlights tabs, bookmarks (B key or toolbar button), text highlighting in 4 colors, auto-resume to last position, swipe + arrow keys, download progress, soft slide+sweep page-turn animation
+- In-app PDF reader (react-pdf): same visual chrome, themed via mix-blend-mode, sidebar with Contents (PDF outline) + Bookmarks tabs, page bookmarks, auto-resume to last page, zoom in/out, swipe + arrow keys, download progress, same slide+sweep animation
 - "My Shelf" of favorites synced per device
 
 ## User preferences
@@ -63,9 +69,10 @@ A cozy, mobile-first web app for discovering and reading classic books, with a 3
 
 ## Gotchas
 
-- Project Gutenberg EPUBs MUST be fetched through the CORS proxy.
-- Gutendex requests have a 6s per-request `AbortController` timeout (gutendex.com is occasionally unreachable); without it, the "Looking up edition…" pill on book detail can hang forever.
-- Only EPUB is supported in the reader. PDF/text would require a separate renderer (e.g. `react-pdf`) and a different reader UI — deferred for now.
+- Project Gutenberg files (EPUB and PDF) MUST be fetched through the same-origin proxy.
+- Gutendex requests have a 20s per-request `AbortController` timeout. They run in parallel, so the worst-case wait is 20s rather than 4 × 20s. Lower values starve slow-day responses entirely.
+- `pdfjs-dist` MUST stay pinned to the version `react-pdf` bundles (currently 5.4.296 for react-pdf@10.4.x). A skewed version triggers the classic "API version does not match Worker version" error and breaks PDF rendering.
+- PDF reader stores its state under `useReaderState("<workId>:pdf")` to avoid colliding with EPUB CFIs for the same work. PDF bookmarks store CFI as `pdf:<page>`.
 - Generated client hooks accept `{ query, request }` (NOT `fetch`); use `request` for `RequestInit` overrides.
 - @react-three/fiber must be v9+ for React 19 compatibility (older versions throw `ReactCurrentOwner` errors).
 - `req.deviceId` is augmented via `declare global { namespace Express { ... } }` in `middlewares/device-id.ts` — keep that file imported wherever the type is needed.

@@ -2,6 +2,7 @@ import { useParams, Link } from "wouter";
 import { useBookDetail, useBookRatings, getCoverUrl, useAuthorName } from "@/hooks/use-open-library";
 import { useGutenbergMatch } from "@/hooks/use-gutenberg";
 import { useGoogleBooksCover } from "@/hooks/use-google-books";
+import { usePrefetchEpub } from "@/hooks/use-epub-data";
 import { useFavorites, useReviews } from "@/hooks/use-local-library";
 import { Layout } from "@/components/layout";
 import { CoverImage } from "@/components/cover-image";
@@ -25,6 +26,7 @@ export default function BookDetail() {
 
   const { data: gutenberg, isLoading: isGutenbergLoading } = useGutenbergMatch(book?.title, authorName ?? undefined);
   const { data: googleCover } = useGoogleBooksCover(book?.title, authorName ?? undefined);
+  const prefetchEpub = usePrefetchEpub();
 
   const [reviewText, setReviewText] = useState("");
   const [reviewStars, setReviewStars] = useState(0);
@@ -95,6 +97,9 @@ export default function BookDetail() {
                 ) : gutenberg ? (
                   <Link
                     href={`/read/${safeWorkId}?epub=${encodeURIComponent(gutenberg.epubUrl)}`}
+                    onMouseEnter={() => prefetchEpub(gutenberg.epubUrl)}
+                    onFocus={() => prefetchEpub(gutenberg.epubUrl)}
+                    onTouchStart={() => prefetchEpub(gutenberg.epubUrl)}
                     className="flex items-center justify-center gap-2 w-full h-12 bg-primary text-primary-foreground font-medium rounded-md hover:bg-primary/90 transition-colors shadow-md"
                   >
                     <BookOpen className="w-5 h-5" />

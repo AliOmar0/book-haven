@@ -62,13 +62,19 @@ function score(b: GutenbergBook, title: string, author?: string): number {
 }
 
 async function searchGutendex(params: string): Promise<GutenbergBook[]> {
+  // Gutendex is occasionally slow or unreachable — bail out per-request
+  // so the overall match query can still resolve in bounded time.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 6000);
   try {
-    const res = await fetch(`${GUTENDEX_URL}?${params}`);
+    const res = await fetch(`${GUTENDEX_URL}?${params}`, { signal: ctrl.signal });
     if (!res.ok) return [];
     const data = await res.json();
     return (data.results || []) as GutenbergBook[];
   } catch {
     return [];
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -127,5 +133,6 @@ export function useGutenbergMatch(title?: string, author?: string) {
     },
     enabled: !!title,
     staleTime: 1000 * 60 * 60,
+    retry: false,
   });
 }

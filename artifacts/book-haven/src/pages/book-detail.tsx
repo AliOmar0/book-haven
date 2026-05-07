@@ -2,6 +2,7 @@ import { useParams, Link } from "wouter";
 import { useBookDetail, useBookRatings, getCoverUrl, useAuthorName } from "@/hooks/use-open-library";
 import { useGutenbergMatch } from "@/hooks/use-gutenberg";
 import { useArchiveMatch } from "@/hooks/use-archive";
+import { useStandardEbooksMatch } from "@/hooks/use-standard-ebooks";
 import { useGoogleBooksCover } from "@/hooks/use-google-books";
 import { usePrefetchBookFile } from "@/hooks/use-epub-data";
 import { useEnhancedDescription } from "@/hooks/use-enhanced-description";
@@ -38,10 +39,23 @@ export default function BookDetail() {
     authorName ?? undefined,
     archiveEnabled,
   );
+  // Standard Ebooks is a final fallback — small catalog (~1k titles) but
+  // dramatically higher EPUB quality than auto-generated sources. Only fire
+  // once both Gutenberg and Archive have resolved with no usable file, to
+  // avoid an extra network probe for popular titles.
+  const archiveHasFile = !!(archive && (archive.epubUrl || archive.pdfUrl));
+  const standardEbooksEnabled =
+    !isGutenbergLoading && !gutenbergHasFile &&
+    archiveEnabled && !isArchiveLoading && !archiveHasFile;
+  const { data: standardEbooks, isLoading: isStandardEbooksLoading } = useStandardEbooksMatch(
+    book?.title,
+    authorName ?? undefined,
+    standardEbooksEnabled,
+  );
   const { data: googleCover } = useGoogleBooksCover(book?.title, authorName ?? undefined);
 
-  // Unified read-source: prefer Gutenberg (vetted, clean text), fall back to Archive.
-  // For Gutenberg, EPUB is the primary CTA (clean reflowable text).
+  // Unified read-source cascade: Gutenberg → Internet Archive → Standard Ebooks.
+  // For Gutenberg/SE, EPUB is the primary CTA (clean reflowable text).
   // For Internet Archive, PDF is the primary CTA — IA's PDFs are real scans
   // with OCR text, while their auto-generated EPUBs are frequently malformed
   // image-only files that crash epub.js.
@@ -50,10 +64,15 @@ export default function BookDetail() {
     | null =
     gutenbergHasFile
       ? { epubUrl: gutenberg!.epubUrl, pdfUrl: gutenberg!.pdfUrl, label: "Project Gutenberg", primary: "epub" }
-      : archive && (archive.epubUrl || archive.pdfUrl)
-        ? { epubUrl: archive.epubUrl, pdfUrl: archive.pdfUrl, label: "Internet Archive", primary: "pdf" }
-        : null;
-  const isLookingUp = isGutenbergLoading || (archiveEnabled && isArchiveLoading);
+      : archiveHasFile
+        ? { epubUrl: archive!.epubUrl, pdfUrl: archive!.pdfUrl, label: "Internet Archive", primary: "pdf" }
+        : standardEbooks?.epubUrl
+          ? { epubUrl: standardEbooks.epubUrl, pdfUrl: undefined, label: "Standard Ebooks", primary: "epub" }
+          : null;
+  const isLookingUp =
+    isGutenbergLoading ||
+    (archiveEnabled && isArchiveLoading) ||
+    (standardEbooksEnabled && isStandardEbooksLoading);
   const prefetch = usePrefetchBookFile();
   const synopsis = useEnhancedDescription(book?.title, authorName ?? undefined, book?.description);
 

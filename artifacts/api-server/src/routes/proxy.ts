@@ -7,6 +7,7 @@ const ALLOWED_HOSTS = new Set([
   "gutenberg.org",
   "archive.org",
   "www.archive.org",
+  "standardebooks.org",
 ]);
 
 // Internet Archive download URLs redirect to dynamically-named storage
@@ -17,8 +18,21 @@ function hostAllowed(hostname: string): boolean {
   return false;
 }
 
+// Allow callers to request a specific Accept header upstream (e.g. Standard
+// Ebooks' /feeds/atom/all returns HTML when no Accept is sent, but proper
+// Atom XML when Accept: application/atom+xml is sent). Restricted to a small
+// set of safe values so this can't be abused for header smuggling.
+const ALLOWED_ACCEPT_HEADERS = new Set([
+  "application/atom+xml",
+  "application/xml",
+  "application/json",
+  "text/xml",
+]);
+
 router.get("/proxy/epub", async (req, res) => {
   const url = typeof req.query["url"] === "string" ? req.query["url"] : "";
+  const acceptParam = typeof req.query["accept"] === "string" ? req.query["accept"] : "";
+  const accept = ALLOWED_ACCEPT_HEADERS.has(acceptParam) ? acceptParam : "";
   if (!url) {
     res.status(400).json({ error: "Missing url" });
     return;
@@ -44,9 +58,11 @@ router.get("/proxy/epub", async (req, res) => {
     let current: URL = parsed;
     let upstream: Response | null = null;
     for (let hop = 0; hop < 5; hop++) {
+      const headers: Record<string, string> = { "User-Agent": "BookHaven/1.0" };
+      if (accept) headers["Accept"] = accept;
       const resp: Response = await fetch(current.toString(), {
         redirect: "manual",
-        headers: { "User-Agent": "BookHaven/1.0" },
+        headers,
       });
       if (resp.status >= 300 && resp.status < 400) {
         const loc = resp.headers.get("location");
@@ -84,8 +100,16 @@ router.get("/proxy/epub", async (req, res) => {
       "Content-Type",
       upstream.headers.get("content-type") || "application/epub+zip",
     );
+    // Only forward Content-Length when upstream wasn't compressed. Node's
+    // fetch transparently decodes gzip/br responses, so the upstream
+    // Content-Length (which describes the compressed payload) would no
+    // longer match what we actually write. If we forwarded it the browser
+    // would stop reading after the compressed-byte count and truncate the
+    // response (this manifested as Standard Ebooks' /feeds/atom/all coming
+    // back with only 2-3 entries instead of the full result set).
+    const upstreamEncoding = upstream.headers.get("content-encoding");
     const len = upstream.headers.get("content-length");
-    if (len) res.setHeader("Content-Length", len);
+    if (len && !upstreamEncoding) res.setHeader("Content-Length", len);
     res.setHeader("Cache-Control", "public, max-age=86400");
 
     const reader = upstream.body.getReader();

@@ -1,4 +1,5 @@
 # Railway / Nixpacks build config for the Book Haven API server.
+<<<<<<< HEAD
 #
 # Railway runs Nixpacks against this repo. By default Nixpacks detects pnpm
 # and runs `pnpm install --frozen-lockfile`, which fails on this monorepo
@@ -9,6 +10,8 @@
 #
 # If you want to deploy a different artifact later, change the --filter
 # target in [phases.build] and [start].
+=======
+>>>>>>> 850189c6aed8a48dea95855070b7b547090253fa
 
 [phases.setup]
 nixPkgs = ["nodejs_24", "pnpm-10_x"]

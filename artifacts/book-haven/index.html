@@ -2,12 +2,34 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <title>Book Haven</title>
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f5e9d0" />
+    <title>Book Haven — A cozy place to discover and read classic books</title>
+    <meta
+      name="description"
+      content="Browse, favorite, and read classic public-domain books in a cozy, mobile-first reader."
+    />
+    <meta property="og:title" content="Book Haven" />
+    <meta property="og:description" content="A cozy place to discover and read classic books." />
+    <meta property="og:image" content="./opengraph.jpg" />
+    <meta property="og:type" content="website" />
+    <script>
+      // Single Page Apps for GitHub Pages — companion to public/404.html.
+      // Restores the "real" path that 404.html packed into the query string.
+      (function (l) {
+        if (l.search[1] === "/") {
+          var decoded = l.search
+            .slice(1)
+            .split("&")
+            .map(function (s) {
+              return s.replace(/~and~/g, "&");
+            })
+            .join("?");
+          window.history.replaceState(null, "", l.pathname.slice(0, -1) + decoded + l.hash);
+        }
+      })(window.location);
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -360,7 +360,11 @@ export async function customFetch<T = unknown>(
 
   const requestInfo = { method, url: resolveUrl(input) };
 
-  const response = await fetch(input, { ...init, method, headers });
+  // Always include credentials so the same-origin device cookie (or, in
+  // cross-origin deployments, a SameSite=None cookie) is sent on every API
+  // call. Per-request `credentials` overrides still win because `init` is
+  // spread after the default.
+  const response = await fetch(input, { credentials: "include", ...init, method, headers });
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

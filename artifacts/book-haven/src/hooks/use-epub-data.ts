@@ -1,11 +1,17 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useRef } from "react";
 
+// When the API is hosted on a different origin (e.g. frontend on GitHub
+// Pages, API on Railway), VITE_API_URL points at the API origin and we
+// prefix every proxy request with it. Otherwise we use a same-origin
+// relative URL so the workspace reverse-proxy can route it.
+const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/+$/, "");
+
 const PROXIES = [
-  // Same-origin first-party proxy is most reliable. Despite the path name
-  // "epub", the route streams whatever upstream returns (PDFs, EPUBs, etc.)
-  // and forwards the upstream Content-Type.
-  (url: string) => `/api/proxy/epub?url=${encodeURIComponent(url)}`,
+  // First-party proxy is most reliable. Despite the path name "epub", the
+  // route streams whatever upstream returns (PDFs, EPUBs, etc.) and forwards
+  // the upstream Content-Type.
+  (url: string) => `${API_BASE}/api/proxy/epub?url=${encodeURIComponent(url)}`,
   (url: string) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
 ];
 
@@ -22,7 +28,9 @@ async function fetchWithProgress(
   onProgress?: ProgressCallback,
   signal?: AbortSignal,
 ): Promise<ArrayBuffer> {
-  const res = await fetch(url, { signal });
+  // credentials: "include" so the device cookie is sent in cross-origin
+  // deployments (it's harmless on same-origin).
+  const res = await fetch(url, { signal, credentials: "include" });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const total = Number(res.headers.get("content-length")) || 0;
   const reader = res.body?.getReader();

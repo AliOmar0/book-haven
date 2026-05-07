@@ -5,7 +5,17 @@ const router: IRouter = Router();
 const ALLOWED_HOSTS = new Set([
   "www.gutenberg.org",
   "gutenberg.org",
+  "archive.org",
+  "www.archive.org",
 ]);
+
+// Internet Archive download URLs redirect to dynamically-named storage
+// servers (e.g. ia801505.us.archive.org). Allow any *.archive.org subdomain.
+function hostAllowed(hostname: string): boolean {
+  if (ALLOWED_HOSTS.has(hostname)) return true;
+  if (hostname.endsWith(".archive.org")) return true;
+  return false;
+}
 
 router.get("/proxy/epub", async (req, res) => {
   const url = typeof req.query["url"] === "string" ? req.query["url"] : "";
@@ -22,7 +32,7 @@ router.get("/proxy/epub", async (req, res) => {
     return;
   }
 
-  if (parsed.protocol !== "https:" || !ALLOWED_HOSTS.has(parsed.hostname)) {
+  if (parsed.protocol !== "https:" || !hostAllowed(parsed.hostname)) {
     res.status(403).json({ error: "Host not allowed" });
     return;
   }
@@ -51,7 +61,7 @@ router.get("/proxy/epub", async (req, res) => {
           res.status(502).end();
           return;
         }
-        if (next.protocol !== "https:" || !ALLOWED_HOSTS.has(next.hostname)) {
+        if (next.protocol !== "https:" || !hostAllowed(next.hostname)) {
           req.log.warn({ from: current.toString(), to: next.toString() }, "epub proxy redirect blocked");
           res.status(403).json({ error: "Redirect target not allowed" });
           return;

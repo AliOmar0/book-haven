@@ -103,17 +103,29 @@ export default function Read() {
     setRenderError(false);
 
     const buffer = epubData.slice(0);
-    const book = ePub(buffer);
-    bookRef.current = book;
+    let book: Book;
+    let rendition: Rendition;
+    try {
+      book = ePub(buffer);
+      bookRef.current = book;
 
-    const rendition = book.renderTo(viewerRef.current, {
-      width: "100%",
-      height: "100%",
-      spread: "none",
-      flow: "paginated",
-      allowScriptedContent: false,
-    });
-    renditionRef.current = rendition;
+      rendition = book.renderTo(viewerRef.current, {
+        width: "100%",
+        height: "100%",
+        spread: "none",
+        flow: "paginated",
+        allowScriptedContent: false,
+      });
+      renditionRef.current = rendition;
+    } catch (err) {
+      // Some EPUBs in the wild (especially auto-generated scans from Internet
+      // Archive) have malformed OPF/spine and throw synchronously inside epub.js
+      // before any promise. Catch and surface a friendly error rather than
+      // letting the whole reader page crash.
+      console.error("epub init failed", err);
+      setRenderError(true);
+      return;
+    }
 
     rendition.themes.register("light", {
       body: { background: THEME_BG.light, color: THEME_FG.light, "font-family": "Georgia, serif" },
@@ -176,14 +188,26 @@ export default function Read() {
         if (!cancelled) setRenderError(true);
       });
 
-    book.loaded.navigation.then((nav) => {
-      if (!cancelled) setToc(nav.toc);
-    });
-    book.loaded.metadata.then((meta) => {
-      if (!cancelled) setBookTitle(meta.title || "");
-    });
+    // Add catches to every async parse handle. Malformed EPUBs from Internet
+    // Archive auto-conversions throw deep inside epub.js's `new Path()` from
+    // the spine/navigation parsers; without a catch these become unhandled
+    // rejections and the Vite dev overlay (or a blank crash in prod) takes over.
+    book.loaded.navigation.then(
+      (nav) => { if (!cancelled) setToc(nav.toc); },
+      (err) => { console.warn("epub navigation parse failed", err); },
+    );
+    book.loaded.metadata.then(
+      (meta) => { if (!cancelled) setBookTitle(meta.title || ""); },
+      (err) => { console.warn("epub metadata parse failed", err); },
+    );
 
-    book.ready.then(() => book.locations.generate(1024)).catch(() => {});
+    book.ready
+      .then(() => book.locations.generate(1024))
+      .catch((err) => {
+        console.warn("epub locations failed", err);
+        // If the underlying book never finishes parsing, fail soft.
+        if (!cancelled && !renderReady) setRenderError(true);
+      });
 
     rendition.on("relocated", (loc: { start: { cfi?: string; percentage?: number } }) => {
       if (cancelled) return;

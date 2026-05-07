@@ -1,6 +1,7 @@
 import { useParams, Link } from "wouter";
 import { useBookDetail, useBookRatings, getCoverUrl, useAuthorName } from "@/hooks/use-open-library";
 import { useGutenbergMatch } from "@/hooks/use-gutenberg";
+import { useArchiveMatch } from "@/hooks/use-archive";
 import { useGoogleBooksCover } from "@/hooks/use-google-books";
 import { usePrefetchBookFile } from "@/hooks/use-epub-data";
 import { useEnhancedDescription } from "@/hooks/use-enhanced-description";
@@ -26,7 +27,33 @@ export default function BookDetail() {
   const { data: authorName } = useAuthorName(authorKey);
 
   const { data: gutenberg, isLoading: isGutenbergLoading } = useGutenbergMatch(book?.title, authorName ?? undefined);
+  // Internet Archive is a deep fallback for books Gutenberg doesn't carry.
+  // Only fire it once Gutenberg has resolved with no result, to avoid two
+  // simultaneous network probes for popular titles where Gutenberg wins instantly.
+  const gutenbergHasFile = !!(gutenberg && (gutenberg.epubUrl || gutenberg.pdfUrl));
+  const archiveEnabled = !isGutenbergLoading && !gutenbergHasFile;
+  const { data: archive, isLoading: isArchiveLoading } = useArchiveMatch(
+    safeWorkId,
+    book?.title,
+    authorName ?? undefined,
+    archiveEnabled,
+  );
   const { data: googleCover } = useGoogleBooksCover(book?.title, authorName ?? undefined);
+
+  // Unified read-source: prefer Gutenberg (vetted, clean text), fall back to Archive.
+  // For Gutenberg, EPUB is the primary CTA (clean reflowable text).
+  // For Internet Archive, PDF is the primary CTA — IA's PDFs are real scans
+  // with OCR text, while their auto-generated EPUBs are frequently malformed
+  // image-only files that crash epub.js.
+  const readSource:
+    | { epubUrl?: string; pdfUrl?: string; label: string; primary: "epub" | "pdf" }
+    | null =
+    gutenbergHasFile
+      ? { epubUrl: gutenberg!.epubUrl, pdfUrl: gutenberg!.pdfUrl, label: "Project Gutenberg", primary: "epub" }
+      : archive && (archive.epubUrl || archive.pdfUrl)
+        ? { epubUrl: archive.epubUrl, pdfUrl: archive.pdfUrl, label: "Internet Archive", primary: "pdf" }
+        : null;
+  const isLookingUp = isGutenbergLoading || (archiveEnabled && isArchiveLoading);
   const prefetch = usePrefetchBookFile();
   const synopsis = useEnhancedDescription(book?.title, authorName ?? undefined, book?.description);
 
@@ -74,7 +101,8 @@ export default function BookDetail() {
   }
 
   const olCover = getCoverUrl(book.covers?.[0], "L");
-  const coverFallbacks = [gutenberg?.coverUrl, googleCover ?? undefined];
+  const archiveCover = archive ? `https://archive.org/services/img/${archive.identifier}` : undefined;
+  const coverFallbacks = [gutenberg?.coverUrl, archiveCover, googleCover ?? undefined];
   const coverUrl = olCover ?? coverFallbacks.find(Boolean);
   const isFav = isFavorite(safeWorkId);
   const description = synopsis.text;
@@ -94,43 +122,61 @@ export default function BookDetail() {
               </div>
 
               <div className="flex flex-col gap-3">
-                {isGutenbergLoading ? (
+                {isLookingUp ? (
                   <div className="flex items-center justify-center gap-2 w-full h-12 bg-primary/30 text-primary-foreground/70 font-medium rounded-md shadow-md">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Looking up edition…
+                    {isGutenbergLoading ? "Looking up edition…" : "Searching Internet Archive…"}
                   </div>
-                ) : gutenberg && (gutenberg.epubUrl || gutenberg.pdfUrl) ? (
-                  <div className="flex flex-col gap-2">
-                    {gutenberg.epubUrl && (
+                ) : readSource ? (
+                  (() => {
+                    const epubBtn = readSource.epubUrl ? (
                       <Link
-                        href={`/read/${safeWorkId}?epub=${encodeURIComponent(gutenberg.epubUrl)}`}
-                        onMouseEnter={() => prefetch(gutenberg.epubUrl)}
-                        onFocus={() => prefetch(gutenberg.epubUrl)}
-                        onTouchStart={() => prefetch(gutenberg.epubUrl)}
-                        className="flex items-center justify-center gap-2 w-full h-12 bg-primary text-primary-foreground font-medium rounded-md hover:bg-primary/90 transition-colors shadow-md"
+                        key="epub"
+                        href={`/read/${safeWorkId}?epub=${encodeURIComponent(readSource.epubUrl)}`}
+                        onMouseEnter={() => prefetch(readSource.epubUrl)}
+                        onFocus={() => prefetch(readSource.epubUrl)}
+                        onTouchStart={() => prefetch(readSource.epubUrl)}
+                        className={cn(
+                          "flex items-center justify-center gap-2 w-full h-12 font-medium rounded-md transition-colors",
+                          readSource.primary === "epub"
+                            ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md"
+                            : "border-2 border-primary/30 text-primary hover:bg-primary/5",
+                        )}
                       >
                         <BookOpen className="w-5 h-5" />
                         Read EPUB
                       </Link>
-                    )}
-                    {gutenberg.pdfUrl && (
+                    ) : null;
+                    const pdfBtn = readSource.pdfUrl ? (
                       <Link
-                        href={`/read-pdf/${safeWorkId}?pdf=${encodeURIComponent(gutenberg.pdfUrl)}`}
-                        onMouseEnter={() => prefetch(gutenberg.pdfUrl)}
-                        onFocus={() => prefetch(gutenberg.pdfUrl)}
-                        onTouchStart={() => prefetch(gutenberg.pdfUrl)}
+                        key="pdf"
+                        href={`/read-pdf/${safeWorkId}?pdf=${encodeURIComponent(readSource.pdfUrl)}`}
+                        onMouseEnter={() => prefetch(readSource.pdfUrl)}
+                        onFocus={() => prefetch(readSource.pdfUrl)}
+                        onTouchStart={() => prefetch(readSource.pdfUrl)}
                         className={cn(
                           "flex items-center justify-center gap-2 w-full h-12 font-medium rounded-md transition-colors",
-                          gutenberg.epubUrl
-                            ? "border-2 border-primary/30 text-primary hover:bg-primary/5"
-                            : "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md",
+                          readSource.primary === "pdf"
+                            ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md"
+                            : "border-2 border-primary/30 text-primary hover:bg-primary/5",
                         )}
                       >
                         <FileText className="w-5 h-5" />
                         Read PDF
                       </Link>
-                    )}
-                  </div>
+                    ) : null;
+                    const ordered = readSource.primary === "pdf"
+                      ? [pdfBtn, epubBtn]
+                      : [epubBtn, pdfBtn];
+                    return (
+                      <div className="flex flex-col gap-2">
+                        {ordered}
+                        <p className="text-[10px] uppercase tracking-wider text-muted-foreground/70 text-center pt-1">
+                          via {readSource.label}
+                        </p>
+                      </div>
+                    );
+                  })()
                 ) : (
                   <div className="flex items-center justify-center gap-2 w-full h-12 bg-muted/60 text-muted-foreground font-medium rounded-md text-sm border border-dashed border-border">
                     Not available to read

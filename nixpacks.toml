@@ -1,7 +1,7 @@
 # Railway / Nixpacks build config for the Book Haven API server.
 
 [phases.setup]
-nixPkgs = ["nodejs_24", "pnpm-10_x"]
+nixPkgs = ["nodejs_22", "pnpm-10_x"]
 
 [phases.install]
 cmds = ["pnpm install --no-frozen-lockfile"]
